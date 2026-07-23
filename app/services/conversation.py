@@ -81,3 +81,30 @@ async def record_outbound_message(
     session.add(message)
     await session.flush()
     return message
+
+
+async def get_recent_messages(
+    session: AsyncSession,
+    *,
+    conversation_id: uuid.UUID,
+    limit: int = 6,
+    exclude_message_id: uuid.UUID | None = None,
+) -> list[Message]:
+    query = select(Message).where(Message.conversation_id == conversation_id)
+    if exclude_message_id is not None:
+        query = query.where(Message.id != exclude_message_id)
+    query = query.order_by(Message.created_at.desc()).limit(limit)
+    result = await session.execute(query)
+    messages = list(result.scalars().all())
+    messages.reverse()  # chronological order for the prompt
+    return messages
+
+
+async def get_last_outbound_message(session: AsyncSession, user_id: uuid.UUID) -> Message | None:
+    result = await session.execute(
+        select(Message)
+        .where(Message.user_id == user_id, Message.direction == "outbound")
+        .order_by(Message.created_at.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()

@@ -12,7 +12,11 @@ python-multipart==0.0.20
 # --- M1: WhatsApp round trip ---
 twilio==9.4.3
 
-# Later milestones add: google-genai, google-auth-oauthlib,
-# google-api-python-client, cryptography, apscheduler, edge-tts,
-# python-magic, httpx, pytest/pytest-asyncio/respx/testcontainers.
+# --- M2: conversation with Gemini ---
+google-genai==1.3.0
+tzdata==2025.2
+
+# Later milestones add: google-auth-oauthlib, google-api-python-client,
+# cryptography, apscheduler, edge-tts, python-magic, httpx,
+# pytest/pytest-asyncio/respx/testcontainers.
 # Do not add ahead of the milestone that needs them.

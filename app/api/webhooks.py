@@ -3,15 +3,13 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.channels import outbound
 from app.channels.inbound import parse_inbound
 from app.channels.twilio_whatsapp import provider
 from app.core.config import settings
 from app.core.deps import get_db
 from app.core.logging import get_logger
 from app.db.models.message import Message
-from app.db.models.user import User
-from app.db.session import async_session
+from app.pipelines.router import route_inbound
 from app.services import conversation as conversation_service
 
 router = APIRouter()
@@ -26,16 +24,6 @@ def _webhook_url(path: str) -> str:
     # Railway terminates TLS at the edge and reports http internally, so the
     # signed URL must come from PUBLIC_BASE_URL, never request.url (§10.1).
     return f"{settings.public_base_url.rstrip('/')}{path}"
-
-
-async def _send_echo_reply(user_id, conversation_id, body: str) -> None:
-    async with async_session() as session:
-        result = await session.execute(select(User).where(User.id == user_id))
-        user = result.scalar_one_or_none()
-        if user is None:
-            return
-        await outbound.send_text(session, user, conversation_id, body)
-        await session.commit()
 
 
 @router.post("/webhooks/twilio")
@@ -62,7 +50,7 @@ async def twilio_inbound(
             display_name=inbound.display_name,
         )
         conversation = await conversation_service.get_or_create_open_conversation(session, user)
-        await conversation_service.record_inbound_message(
+        message = await conversation_service.record_inbound_message(
             session, user=user, conversation=conversation, inbound=inbound
         )
         await session.commit()
@@ -77,8 +65,13 @@ async def twilio_inbound(
         logger.exception("twilio_inbound_processing_failed")
         return _empty_twiml()
 
-    if inbound.kind == "text" and inbound.text:
-        background_tasks.add_task(_send_echo_reply, user.id, conversation.id, inbound.text)
+    background_tasks.add_task(
+        route_inbound,
+        user_id=user.id,
+        conversation_id=conversation.id,
+        message_id=message.id,
+        inbound=inbound,
+    )
 
     return _empty_twiml()
 
