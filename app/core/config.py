@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -23,6 +24,18 @@ class Settings(BaseSettings):
     database_url: str
     media_root: str = "/data/media"
     tts_cache_root: str = "/data/tts"
+
+    @field_validator("database_url")
+    @classmethod
+    def _force_asyncpg_driver(cls, v: str) -> str:
+        # Railway's Postgres plugin (and most providers) hand out a plain
+        # postgres:// or postgresql:// URL, which SQLAlchemy maps to the sync
+        # psycopg2 driver. The app uses the async engine, so force asyncpg.
+        if v.startswith("postgres://"):
+            v = "postgresql://" + v[len("postgres://") :]
+        if v.startswith("postgresql://"):
+            v = "postgresql+asyncpg://" + v[len("postgresql://") :]
+        return v
 
     # Crypto
     token_encryption_key: str
