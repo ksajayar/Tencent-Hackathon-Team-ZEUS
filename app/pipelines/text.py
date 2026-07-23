@@ -12,7 +12,8 @@ from app.core.logging import get_logger
 from app.db.models.message import Message
 from app.db.models.user import User
 from app.db.session import async_session
-from app.i18n.strings import GEMINI_DEGRADED
+from app.google import oauth as google_oauth
+from app.i18n.strings import CONNECT_GOOGLE_LINK, GEMINI_DEGRADED
 from app.safety.simplifier import simplify
 from app.services import conversation as conversation_service
 
@@ -33,6 +34,11 @@ _REPEAT_PHRASES = [
     "重复一下",
 ]
 _REPEAT_RE = re.compile("|".join(re.escape(p) for p in _REPEAT_PHRASES), re.IGNORECASE)
+
+_CONNECT_GOOGLE_PHRASES = ["connect google", "连接谷歌", "连接谷歌账号"]
+_CONNECT_GOOGLE_RE = re.compile(
+    "|".join(re.escape(p) for p in _CONNECT_GOOGLE_PHRASES), re.IGNORECASE
+)
 
 
 def detect_language(text: str, *, fallback: str) -> tuple[str | None, str]:
@@ -86,6 +92,12 @@ async def _general_qa(
     return simplify(reply)
 
 
+async def _connect_google(session: AsyncSession, user: User, reply_language: str) -> str:
+    link = await google_oauth.create_connect_link(session, user.id)
+    template = CONNECT_GOOGLE_LINK.get(reply_language, CONNECT_GOOGLE_LINK["en"])
+    return template.format(link=link)
+
+
 async def _generate_reply(
     session: AsyncSession,
     user: User,
@@ -94,6 +106,9 @@ async def _generate_reply(
     text: str,
     reply_language: str,
 ) -> str:
+    if _CONNECT_GOOGLE_RE.search(text):
+        return await _connect_google(session, user, reply_language)
+
     if _REPEAT_RE.search(text):
         last = await conversation_service.get_last_outbound_message(session, user.id)
         if last is not None and last.body:

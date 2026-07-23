@@ -48,5 +48,11 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     environment: str = "development"
 
+    @property
+    def sync_database_url(self) -> str:
+        # APScheduler's SQLAlchemyJobStore uses sync SQLAlchemy internally and
+        # can't share the asyncpg engine - only the job store needs this.
+        return self.database_url.replace("postgresql+asyncpg://", "postgresql+psycopg2://", 1)
+
 
 settings = Settings()
