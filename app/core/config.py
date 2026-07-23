@@ -12,8 +12,8 @@ class Settings(BaseSettings):
 
     # AI
     gemini_api_key: str
-    gemini_model_fast: str = "gemini-flash-lite"
-    gemini_model_main: str = "gemini-flash"
+    gemini_model_fast: str = "gemini-flash-lite-latest"
+    gemini_model_main: str = "gemini-flash-latest"
 
     # Google
     google_client_id: str
