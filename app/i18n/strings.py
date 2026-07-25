@@ -27,3 +27,23 @@ RESCHEDULED_EVENT = {
     "en": "Your appointment '{summary}' has moved to {when}.",
     "zh-Hans": "您的日程「{summary}」改到了{when}。",
 }
+
+MEDICATION_REMINDER = {
+    "en": "It is time for your {time_of_day} medicine, {name}. Please take {dose_text}.",
+    "zh-Hans": "现在是您{time_of_day}吃{name}的时间。请服用{dose_text}。",
+}
+
+MEDICATION_GUARD_FALLBACK = {
+    "en": "It is time for your medicine. Please check with your caregiver if unsure.",
+    "zh-Hans": "现在是吃药的时间。如果不确定，请联系您的照顾者。",
+}
+
+MEDICATION_ACK_CONFIRMATION = {
+    "en": "Good, thank you for letting me know.",
+    "zh-Hans": "好的，谢谢您告诉我。",
+}
+
+NO_MEDICATIONS = {
+    "en": "I don't have any medicines on file for you yet. Please check with your caregiver.",
+    "zh-Hans": "我这里还没有您的药物记录，请联系您的照顾者。",
+}

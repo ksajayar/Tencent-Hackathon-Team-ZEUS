@@ -23,7 +23,12 @@ scheduler = AsyncIOScheduler(
 
 
 def start() -> None:
+    from app.jobs.ack_watchdog import check_unacked_reminders
     from app.jobs.calendar_sync import sync_all_calendars
+    from app.jobs.medication_sync import sync_all_medication_reminders
+    from app.jobs.outbound_flush import flush_outbound_queue
+    from app.jobs.reminders import fire_due_reminders
+    from app.jobs.retry_failed import retry_failed_sends
     from app.jobs.token_refresh import refresh_google_tokens
 
     scheduler.add_job(
@@ -38,6 +43,41 @@ def start() -> None:
         "interval",
         minutes=15,
         id="sync_calendar",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        sync_all_medication_reminders,
+        "interval",
+        minutes=10,
+        id="sync_medication_reminders",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        fire_due_reminders,
+        "interval",
+        seconds=60,
+        id="fire_due_reminders",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        flush_outbound_queue,
+        "interval",
+        seconds=5,
+        id="flush_outbound_queue",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        retry_failed_sends,
+        "interval",
+        minutes=5,
+        id="retry_failed_sends",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        check_unacked_reminders,
+        "interval",
+        minutes=10,
+        id="ack_watchdog",
         replace_existing=True,
     )
     scheduler.start()

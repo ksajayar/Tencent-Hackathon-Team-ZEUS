@@ -9,6 +9,11 @@ class Settings(BaseSettings):
     twilio_account_sid: str
     twilio_auth_token: str
     twilio_whatsapp_from: str = "whatsapp:+14155238886"
+    # Content API SID (starts 'HX') for the sandbox's fixed "appointment
+    # reminder" template - §03 §3.4. Optional so a missing value degrades
+    # (out-of-window reminders log and skip) rather than crashing the app;
+    # look it up via GET /internal/debug/templates.
+    twilio_appointment_template_sid: str | None = None
 
     # AI
     gemini_api_key: str

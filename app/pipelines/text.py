@@ -10,13 +10,22 @@ from app.channels import outbound
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.models.message import Message
+from app.db.models.reminder import ReminderAck
 from app.db.models.user import User
 from app.db.session import async_session
 from app.google import oauth as google_oauth
-from app.i18n.strings import CONNECT_GOOGLE_LINK, GEMINI_DEGRADED
+from app.i18n.strings import (
+    CONNECT_GOOGLE_LINK,
+    GEMINI_DEGRADED,
+    MEDICATION_ACK_CONFIRMATION,
+    MEDICATION_GUARD_FALLBACK,
+    NO_MEDICATIONS,
+)
+from app.safety import medication_guard
 from app.safety.simplifier import simplify
 from app.services import calendar as calendar_service
 from app.services import conversation as conversation_service
+from app.services import medications as medications_service
 
 logger = get_logger(__name__)
 
@@ -39,6 +48,31 @@ _REPEAT_RE = re.compile("|".join(re.escape(p) for p in _REPEAT_PHRASES), re.IGNO
 _CONNECT_GOOGLE_PHRASES = ["connect google", "连接谷歌", "连接谷歌账号"]
 _CONNECT_GOOGLE_RE = re.compile(
     "|".join(re.escape(p) for p in _CONNECT_GOOGLE_PHRASES), re.IGNORECASE
+)
+
+_MEDICATION_QUERY_PHRASES = [
+    "what medicine",
+    "what medication",
+    "my medicine",
+    "my medication",
+    "which medicine",
+    "what pills",
+    "what tablets",
+    "吃什么药",
+    "我的药",
+    "什么药",
+]
+_MEDICATION_QUERY_RE = re.compile(
+    "|".join(re.escape(p) for p in _MEDICATION_QUERY_PHRASES), re.IGNORECASE
+)
+
+# Anchored to the whole message (not .search()): "ok" as a substring appears
+# too often in ordinary sentences to safely trigger on a partial match, and
+# _ack_reminder only actually short-circuits when a reminder is pending
+# anyway, so this stays narrow on both ends.
+_ACK_PHRASES = ["ok", "okay", "done", "taken", "took it", "好", "好的", "吃了", "已服用"]
+_ACK_RE = re.compile(
+    r"^\s*(" + "|".join(re.escape(p) for p in _ACK_PHRASES) + r")\s*[.!。！]?\s*$", re.IGNORECASE
 )
 
 
@@ -100,6 +134,35 @@ async def _connect_google(session: AsyncSession, user: User, reply_language: str
     return template.format(link=link)
 
 
+async def _medication_query(session: AsyncSession, user: User, reply_language: str) -> str:
+    """§07 §7.6: 'What medicine do I take?' - medications only, deterministic,
+    no LLM call, so it can never hallucinate a name or dose."""
+    active_medications = await medications_service.get_active_medications(session, user.id)
+    if not active_medications:
+        return NO_MEDICATIONS.get(reply_language, NO_MEDICATIONS["en"])
+
+    body = medications_service.render_medication_list(active_medications, reply_language)
+    fallback = MEDICATION_GUARD_FALLBACK.get(reply_language, MEDICATION_GUARD_FALLBACK["en"])
+    return medication_guard.enforce(body, active_medications, fallback=fallback)
+
+
+async def _ack_reminder(
+    session: AsyncSession, user: User, message_id: uuid.UUID, reply_language: str
+) -> str | None:
+    """§07 §7.7 step 7. Returns None (not a fallback string) when there is no
+    pending reminder to ack, so the caller can fall through to general_qa -
+    'ok' is common enough in ordinary conversation that hijacking it when
+    nothing is actually pending would be wrong."""
+    reminder = await medications_service.find_unacked_reminder(session, user.id)
+    if reminder is None:
+        return None
+
+    session.add(ReminderAck(reminder_id=reminder.id, user_id=user.id, via_message_id=message_id))
+    await session.flush()
+    logger.info("reminder_acked", reminder_id=str(reminder.id), user_id=str(user.id))
+    return MEDICATION_ACK_CONFIRMATION.get(reply_language, MEDICATION_ACK_CONFIRMATION["en"])
+
+
 async def _generate_reply(
     session: AsyncSession,
     user: User,
@@ -110,6 +173,15 @@ async def _generate_reply(
 ) -> str:
     if _CONNECT_GOOGLE_RE.search(text):
         return await _connect_google(session, user, reply_language)
+
+    if _ACK_RE.match(text):
+        ack_reply = await _ack_reminder(session, user, message_id, reply_language)
+        if ack_reply is not None:
+            return ack_reply
+        # No pending reminder - "ok" was just a normal reply, fall through.
+
+    if _MEDICATION_QUERY_RE.search(text):
+        return await _medication_query(session, user, reply_language)
 
     if _REPEAT_RE.search(text):
         last = await conversation_service.get_last_outbound_message(session, user.id)

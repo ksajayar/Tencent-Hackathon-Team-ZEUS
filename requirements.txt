@@ -26,6 +26,9 @@ requests==2.32.3  # direct call to Google's token-revoke endpoint
 # --- M4: Calendar ---
 google-api-python-client==2.154.0
 
+# --- M5: Reminders ---
+python-dateutil==2.9.0.post0
+
 # Later milestones add: edge-tts, python-magic,
 # httpx, pytest/pytest-asyncio/respx/testcontainers.
 # Do not add ahead of the milestone that needs them.
