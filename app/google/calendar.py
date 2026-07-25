@@ -94,39 +94,47 @@ def _list_events_sync(credentials: Credentials, *, time_min: str, time_max: str)
     return events
 
 
-async def _fetch_events(token_row: OAuthToken, session: AsyncSession) -> list[dict] | None:
-    """Returns None (not []) on unrecoverable failure, so the caller can tell
-    'no events' apart from 'sync failed'."""
+async def _fetch_events(
+    token_row: OAuthToken, session: AsyncSession
+) -> tuple[list[dict] | None, str | None]:
+    """Returns (None, error) - not ([], None) - on unrecoverable failure, so the
+    caller can tell 'no events' apart from 'sync failed', and so the failure
+    reason is available to callers without digging through logs."""
     credentials = _build_credentials(token_row)
     now = datetime.now(UTC)
     time_min = (now - SYNC_WINDOW_PAST).isoformat()
     time_max = (now + SYNC_WINDOW_FUTURE).isoformat()
 
     try:
-        return await asyncio.to_thread(
+        items = await asyncio.to_thread(
             _list_events_sync, credentials, time_min=time_min, time_max=time_max
         )
+        return items, None
     except HttpError as exc:
         if exc.resp.status != 401:
+            error = f"HttpError {exc.resp.status}: {str(exc)[:300]}"
             logger.error(
                 "calendar_sync_http_error", user_id=str(token_row.user_id), status=exc.resp.status
             )
-            return None
-    except Exception:
+            return None, error
+    except Exception as exc:
+        error = f"{exc.__class__.__name__}: {str(exc)[:300]}"
         logger.exception("calendar_sync_failed", user_id=str(token_row.user_id))
-        return None
+        return None, error
 
     # Lazy refresh on 401, once, then give up (§04 refresh table).
     if not await refresh_token_row(session, token_row):
-        return None
+        return None, "token_refresh_failed"
     credentials = _build_credentials(token_row)
     try:
-        return await asyncio.to_thread(
+        items = await asyncio.to_thread(
             _list_events_sync, credentials, time_min=time_min, time_max=time_max
         )
-    except Exception:
+        return items, None
+    except Exception as exc:
+        error = f"{exc.__class__.__name__} after refresh: {str(exc)[:300]}"
         logger.error("calendar_sync_failed_after_refresh", user_id=str(token_row.user_id))
-        return None
+        return None, error
 
 
 async def _notify_reschedule(session: AsyncSession, user: User, event: CalendarEvent) -> None:
@@ -142,18 +150,20 @@ async def _notify_reschedule(session: AsyncSession, user: User, event: CalendarE
     await outbound.send_text(session, user, conversation.id, body)
 
 
-async def sync_user_calendar(session: AsyncSession, token_row: OAuthToken) -> int:
+async def sync_user_calendar(
+    session: AsyncSession, token_row: OAuthToken
+) -> tuple[int, str | None]:
     """Fetches primary-calendar events for one user and upserts calendar_events
-    on (user_id, google_event_id). Returns the number of new-or-changed rows.
-    Never raises - failures are logged and counted as zero changes, matching
+    on (user_id, google_event_id). Returns (changed_count, error). Never raises -
+    failures are logged and returned as an error string, matching
     refresh_token_row's degrade-not-crash contract."""
     user = await session.get(User, token_row.user_id)
     if user is None:
-        return 0
+        return 0, "user_not_found"
 
-    items = await _fetch_events(token_row, session)
+    items, error = await _fetch_events(token_row, session)
     if items is None:
-        return 0
+        return 0, error
 
     result = await session.execute(
         select(CalendarEvent).where(CalendarEvent.user_id == token_row.user_id)
@@ -235,4 +245,4 @@ async def sync_user_calendar(session: AsyncSession, token_row: OAuthToken) -> in
             event_b_id=str(b.id),
         )
 
-    return changed
+    return changed, None

@@ -15,8 +15,8 @@ router = APIRouter(prefix="/internal")
 async def trigger_calendar_sync() -> dict:
     """Force a Calendar sync now (§09) - lets you test M4 without waiting on
     the 15-minute job or the demo Google account's real event timing."""
-    await sync_all_calendars()
-    return {"status": "ok"}
+    results = await sync_all_calendars()
+    return {"status": "ok", "results": results}
 
 
 @router.get("/debug/calendar", dependencies=[Depends(require_admin_token)])
