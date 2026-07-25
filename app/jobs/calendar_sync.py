@@ -16,6 +16,7 @@ async def sync_all_calendars() -> None:
         rows = list(result.scalars().all())
 
         if not rows:
+            logger.info("calendar_sync_job_run", user_count=0, changed=0)
             return
 
         total_changed = 0
