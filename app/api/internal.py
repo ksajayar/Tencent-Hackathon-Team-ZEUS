@@ -1,9 +1,11 @@
 import uuid
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.channels.outbound import WINDOW_HOURS
 from app.channels.twilio_whatsapp import provider as twilio_provider
 from app.core.config import settings
 from app.core.deps import get_db
@@ -13,6 +15,7 @@ from app.db.models.google import OAuthToken
 from app.db.models.medication import Medication
 from app.db.models.outbound_queue import OutboundQueueEntry
 from app.db.models.reminder import Reminder, ReminderAck
+from app.db.models.user import User
 from app.jobs.calendar_sync import sync_all_calendars
 from app.jobs.reminders import fire_one
 from app.services.seed import seed_demo_data
@@ -50,6 +53,21 @@ async def trigger_reminder_fire(
     sent = await fire_one(session, reminder)
     await session.commit()
     return {"status": "ok", "sent": sent}
+
+
+@router.post("/debug/close-window/{user_id}", dependencies=[Depends(require_admin_token)])
+async def debug_close_window(user_id: uuid.UUID, session: AsyncSession = Depends(get_db)) -> dict:
+    """Test utility only: backdates last_inbound_at so the 24h window (§03
+    §3.4) reads as genuinely closed, to verify the template-fallback path
+    without waiting a real day. Self-heals the moment the user messages the
+    bot again - nothing sent to Twilio is faked, only this local timestamp."""
+    user = await session.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="user not found")
+
+    user.last_inbound_at = datetime.now(UTC) - timedelta(hours=WINDOW_HOURS + 1)
+    await session.commit()
+    return {"status": "ok", "last_inbound_at": user.last_inbound_at.isoformat()}
 
 
 @router.get("/debug/templates", dependencies=[Depends(require_admin_token)])
