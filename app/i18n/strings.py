@@ -22,3 +22,8 @@ OAUTH_ERROR = {
     "en": "Something went wrong connecting your Google account. Please try again by saying 'connect google'.",
     "zh-Hans": "连接谷歌账号时出了点问题，请再说一次「连接谷歌」试试。",
 }
+
+RESCHEDULED_EVENT = {
+    "en": "Your appointment '{summary}' has moved to {when}.",
+    "zh-Hans": "您的日程「{summary}」改到了{when}。",
+}

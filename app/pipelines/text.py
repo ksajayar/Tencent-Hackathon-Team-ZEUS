@@ -15,6 +15,7 @@ from app.db.session import async_session
 from app.google import oauth as google_oauth
 from app.i18n.strings import CONNECT_GOOGLE_LINK, GEMINI_DEGRADED
 from app.safety.simplifier import simplify
+from app.services import calendar as calendar_service
 from app.services import conversation as conversation_service
 
 logger = get_logger(__name__)
@@ -76,7 +77,8 @@ async def _general_qa(
     history = await conversation_service.get_recent_messages(
         session, conversation_id=conversation_id, exclude_message_id=message_id
     )
-    context_block = build_context(user=user, history=history)
+    events = await calendar_service.get_schedule_window(session, user.id, tz_name=user.timezone)
+    context_block = build_context(user=user, history=history, events=events)
     persona = PERSONA_ZH if reply_language == "zh-Hans" else PERSONA_EN
     prompt = f"{context_block}\n\nThe patient just said: {text}"
 

@@ -23,6 +23,7 @@ scheduler = AsyncIOScheduler(
 
 
 def start() -> None:
+    from app.jobs.calendar_sync import sync_all_calendars
     from app.jobs.token_refresh import refresh_google_tokens
 
     scheduler.add_job(
@@ -30,6 +31,13 @@ def start() -> None:
         "interval",
         minutes=10,
         id="refresh_google_tokens",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        sync_all_calendars,
+        "interval",
+        minutes=15,
+        id="sync_calendar",
         replace_existing=True,
     )
     scheduler.start()
