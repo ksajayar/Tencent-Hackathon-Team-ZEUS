@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.channels.twilio_whatsapp import provider as twilio_provider
+from app.core.config import settings
 from app.core.deps import get_db
 from app.core.security import require_admin_token
 from app.db.models.calendar import CalendarEvent
@@ -54,9 +55,16 @@ async def trigger_reminder_fire(
 @router.get("/debug/templates", dependencies=[Depends(require_admin_token)])
 async def debug_templates() -> dict:
     """Twilio Content API templates on this account, so the sandbox's
-    'Appointment reminder' ContentSid can be found without console-hunting."""
+    'Appointment reminder' ContentSid can be found without console-hunting.
+    Also echoes the currently *running* configured_sid - not a secret (it's
+    just a Content template id, already visible in your own Twilio console)
+    - so you can confirm a Railway variable change actually redeployed rather
+    than trusting the dashboard alone."""
     templates = await twilio_provider.list_content_templates()
-    return {"templates": templates}
+    return {
+        "templates": templates,
+        "configured_sid": settings.twilio_appointment_template_sid,
+    }
 
 
 @router.get("/debug/calendar", dependencies=[Depends(require_admin_token)])
