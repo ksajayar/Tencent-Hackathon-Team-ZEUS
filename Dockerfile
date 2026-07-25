@@ -17,4 +17,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
   CMD curl -fsS http://localhost:${PORT}/health || exit 1
 
 CMD alembic upgrade head && \
-    uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --workers 1
+    uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --workers 1 --no-access-log
