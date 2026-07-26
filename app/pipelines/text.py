@@ -26,6 +26,7 @@ from app.safety.simplifier import simplify
 from app.services import calendar as calendar_service
 from app.services import conversation as conversation_service
 from app.services import medications as medications_service
+from app.speech import tts
 
 logger = get_logger(__name__)
 
@@ -195,8 +196,26 @@ async def _generate_reply(
     return await _general_qa(session, user, conversation_id, message_id, text, reply_language)
 
 
+async def _send_audio_reply(
+    session: AsyncSession, user: User, conversation_id: uuid.UUID, text: str, language: str
+) -> None:
+    """Best-effort: the text reply is already sent by the time this runs, so
+    a TTS/ffmpeg failure degrades to text-only rather than losing the reply
+    entirely (every external call has a timeout and a fallback)."""
+    try:
+        filename = await tts.synthesize(text, language=language)
+        await outbound.send_audio(session, user, conversation_id, filename=filename, body_text=text)
+    except Exception:
+        logger.exception("tts_reply_failed", user_id=str(user.id))
+
+
 async def handle(
-    *, user_id: uuid.UUID, conversation_id: uuid.UUID, message_id: uuid.UUID, text: str
+    *,
+    user_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    message_id: uuid.UUID,
+    text: str,
+    reply_with_audio: bool = False,
 ) -> None:
     async with async_session() as session:
         user = await session.get(User, user_id)
@@ -216,4 +235,7 @@ async def handle(
         )
 
         await outbound.send_text(session, user, conversation_id, reply_text)
+        if reply_with_audio:
+            # CHANNEL-2: always a second, separate send after the text reply.
+            await _send_audio_reply(session, user, conversation_id, reply_text, reply_language)
         await session.commit()

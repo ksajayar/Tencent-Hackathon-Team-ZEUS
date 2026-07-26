@@ -4,6 +4,7 @@ from fastapi import FastAPI
 
 from app.api.health import router as health_router
 from app.api.internal import router as internal_router
+from app.api.media import router as media_router
 from app.api.oauth import router as oauth_router
 from app.api.webhooks import router as webhooks_router
 from app.core.logging import configure_logging, get_logger
@@ -27,3 +28,4 @@ app.include_router(health_router)
 app.include_router(webhooks_router)
 app.include_router(oauth_router)
 app.include_router(internal_router)
+app.include_router(media_router)

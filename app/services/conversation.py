@@ -67,14 +67,20 @@ async def record_inbound_message(
 
 
 async def record_outbound_message(
-    session: AsyncSession, *, user: User, conversation_id: uuid.UUID, channel_sid: str, body: str
+    session: AsyncSession,
+    *,
+    user: User,
+    conversation_id: uuid.UUID,
+    channel_sid: str,
+    body: str,
+    kind: str = "text",
 ) -> Message:
     message = Message(
         conversation_id=conversation_id,
         user_id=user.id,
         direction="outbound",
         channel_sid=channel_sid,
-        kind="text",
+        kind=kind,
         body=body,
         status="sent",
     )

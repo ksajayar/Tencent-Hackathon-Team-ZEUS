@@ -1,4 +1,5 @@
 import asyncio
+import json
 import random
 import time
 import uuid
@@ -14,6 +15,7 @@ from app.db.session import async_session
 logger = get_logger(__name__)
 
 TEXT_TIMEOUT_SECONDS = 15
+MEDIA_TIMEOUT_SECONDS = 45
 MAX_ATTEMPTS = 3
 RATE_LIMIT_RPM = 8  # comfortably under the ~10-15 RPM free-tier ceiling
 
@@ -84,20 +86,20 @@ async def _log_usage(
         logger.exception("ai_usage_log_failed")
 
 
-async def generate_text(
+async def _call_model(
     *,
     system_prompt: str,
-    user_content: str,
+    contents,
     pipeline: str,
-    model: str | None = None,
-    user_id: uuid.UUID | None = None,
-) -> str | None:
-    """The only function allowed to call Gemini for plain text generation.
-
-    Returns None on any failure after retries/timeout — callers must have a
-    degraded-mode fallback (every external call has a timeout and a fallback).
-    """
-    resolved_model = model or settings.gemini_model_main
+    model: str,
+    user_id: uuid.UUID | None,
+    timeout_seconds: int,
+):
+    """Shared retry/timeout/rate-limit/usage-logging core - the only place
+    that actually calls the Gemini SDK (§12: THE ONLY MODULE THAT CALLS
+    GEMINI). Returns the raw response on success, None on any failure;
+    callers extract .text themselves since text vs audio-transcription
+    callers parse it differently."""
     await _rate_limiter.acquire()
 
     for attempt in range(1, MAX_ATTEMPTS + 1):
@@ -105,11 +107,11 @@ async def generate_text(
         try:
             response = await asyncio.wait_for(
                 _client.aio.models.generate_content(
-                    model=resolved_model,
-                    contents=user_content,
+                    model=model,
+                    contents=contents,
                     config=types.GenerateContentConfig(system_instruction=system_prompt),
                 ),
-                timeout=TEXT_TIMEOUT_SECONDS,
+                timeout=timeout_seconds,
             )
         except TimeoutError:
             latency_ms = int((time.monotonic() - start) * 1000)
@@ -117,7 +119,7 @@ async def generate_text(
             await _log_usage(
                 user_id=user_id,
                 pipeline=pipeline,
-                model=resolved_model,
+                model=model,
                 input_tokens=None,
                 output_tokens=None,
                 latency_ms=latency_ms,
@@ -146,7 +148,7 @@ async def generate_text(
             await _log_usage(
                 user_id=user_id,
                 pipeline=pipeline,
-                model=resolved_model,
+                model=model,
                 input_tokens=None,
                 output_tokens=None,
                 latency_ms=latency_ms,
@@ -159,12 +161,89 @@ async def generate_text(
             await _log_usage(
                 user_id=user_id,
                 pipeline=pipeline,
-                model=resolved_model,
+                model=model,
                 input_tokens=getattr(usage, "prompt_token_count", None) if usage else None,
                 output_tokens=getattr(usage, "candidates_token_count", None) if usage else None,
                 latency_ms=latency_ms,
                 outcome="success",
             )
-            return response.text
+            return response
 
     return None
+
+
+async def generate_text(
+    *,
+    system_prompt: str,
+    user_content: str,
+    pipeline: str,
+    model: str | None = None,
+    user_id: uuid.UUID | None = None,
+) -> str | None:
+    """The only function allowed to call Gemini for plain text generation.
+
+    Returns None on any failure after retries/timeout — callers must have a
+    degraded-mode fallback (every external call has a timeout and a fallback).
+    """
+    response = await _call_model(
+        system_prompt=system_prompt,
+        contents=user_content,
+        pipeline=pipeline,
+        model=model or settings.gemini_model_main,
+        user_id=user_id,
+        timeout_seconds=TEXT_TIMEOUT_SECONDS,
+    )
+    return response.text if response is not None else None
+
+
+_TRANSCRIBE_PROMPT = (
+    "Transcribe this voice message verbatim, keeping any mixed English/Mandarin "
+    "words exactly as spoken - do not force it into one language. Respond with "
+    "raw JSON only, no markdown fences, in exactly this shape: "
+    '{"transcript": "...", "language": "en|zh-Hans|mixed", "confidence": 0.0-1.0}'
+)
+
+
+def _parse_transcription_json(raw: str) -> dict | None:
+    cleaned = raw.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`").removeprefix("json").strip()
+    try:
+        data = json.loads(cleaned)
+        return {
+            "transcript": str(data.get("transcript", "")).strip(),
+            "language": data.get("language"),
+            "confidence": float(data.get("confidence", 0.0)),
+        }
+    except (json.JSONDecodeError, ValueError, TypeError, AttributeError):
+        logger.warning("gemini_transcription_parse_failed")
+        return None
+
+
+async def transcribe_audio(
+    *,
+    audio_bytes: bytes,
+    mime_type: str,
+    pipeline: str,
+    model: str | None = None,
+    user_id: uuid.UUID | None = None,
+) -> dict | None:
+    """§06 §6.1: one call transcribes AND detects language (en|zh-Hans|mixed)
+    in the same pass - Gemini reads mixed-script speech in context instead of
+    forcing single-language identification the way Whisper would.
+
+    Returns {"transcript", "language", "confidence"} or None on failure/
+    unparseable output - same degrade-with-fallback contract as generate_text.
+    """
+    audio_part = types.Part.from_bytes(data=audio_bytes, mime_type=mime_type)
+    response = await _call_model(
+        system_prompt="You are a precise speech transcription assistant.",
+        contents=[_TRANSCRIBE_PROMPT, audio_part],
+        pipeline=pipeline,
+        model=model or settings.gemini_model_main,
+        user_id=user_id,
+        timeout_seconds=MEDIA_TIMEOUT_SECONDS,
+    )
+    if response is None or not response.text:
+        return None
+    return _parse_transcription_json(response.text)

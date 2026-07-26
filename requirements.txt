@@ -29,6 +29,9 @@ google-api-python-client==2.154.0
 # --- M5: Reminders ---
 python-dateutil==2.9.0.post0
 
-# Later milestones add: edge-tts, python-magic,
-# httpx, pytest/pytest-asyncio/respx/testcontainers.
+# --- M6: Voice ---
+edge-tts==7.2.8
+python-magic==0.4.27  # needs libmagic1 (already in the Dockerfile, M0)
+
+# Later milestones add: httpx, pytest/pytest-asyncio/respx/testcontainers.
 # Do not add ahead of the milestone that needs them.

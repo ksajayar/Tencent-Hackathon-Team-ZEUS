@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from app.channels.base import InboundMessage
+from app.channels.base import InboundMessage, MediaRef
 
 
 def _detect_kind(form: dict) -> str:
@@ -24,9 +24,10 @@ def _detect_kind(form: dict) -> str:
 def parse_inbound(form: dict) -> InboundMessage:
     """Normalize a Twilio webhook form payload into the internal shape.
 
-    M1 scope: only 'text' carries a populated `text` field. Other kinds are
-    still classified correctly for storage, but their pipelines (voice, vision,
-    document, location, contact) land in later milestones.
+    M6 scope: 'text' carries `text`, 'audio' carries `media` (downloaded by
+    the voice pipeline in the background - never here, per WEBHOOK-1). Other
+    kinds are still classified correctly for storage, but their pipelines
+    (vision, document, location, contact) land in later milestones.
     """
     kind = _detect_kind(form)
     wa_id = form.get("WaId", "")
@@ -40,6 +41,12 @@ def parse_inbound(form: dict) -> InboundMessage:
         if lat and lon:
             coords = (float(lat), float(lon))
 
+    media = None
+    if kind == "audio":
+        media_url = form.get("MediaUrl0")
+        if media_url:
+            media = MediaRef(remote_url=media_url, mime_type=form.get("MediaContentType0", ""))
+
     return InboundMessage(
         wa_id=wa_id,
         phone_e164=phone_e164,
@@ -47,7 +54,7 @@ def parse_inbound(form: dict) -> InboundMessage:
         message_sid=form.get("MessageSid", ""),
         kind=kind,
         text=form.get("Body") if kind == "text" else None,
-        media=None,
+        media=media,
         coords=coords,
         received_at=datetime.now(UTC),
     )

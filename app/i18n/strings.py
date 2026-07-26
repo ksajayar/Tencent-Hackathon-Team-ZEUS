@@ -47,3 +47,13 @@ NO_MEDICATIONS = {
     "en": "I don't have any medicines on file for you yet. Please check with your caregiver.",
     "zh-Hans": "我这里还没有您的药物记录，请联系您的照顾者。",
 }
+
+AUDIO_TOO_LONG = {
+    "en": "That was a bit long, could you say it again more briefly?",
+    "zh-Hans": "这段有点长，可以再说一次、简短一点吗？",
+}
+
+VOICE_UNCLEAR = {
+    "en": "I didn't quite catch that. Could you say it again?",
+    "zh-Hans": "我没听清楚，可以再说一次吗？",
+}

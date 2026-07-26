@@ -26,7 +26,16 @@ class TwilioWhatsAppProvider:
         return message.sid
 
     async def send_media(self, to: str, media_url: str, mime_type: str) -> str:
-        raise NotImplementedError("Media send lands in M6 (voice) / M8 (vision & documents)")
+        """CHANNEL-2: media-only send, never combined with Body - a Body
+        alongside MediaUrl is silently dropped by Twilio (§03 §3.4)."""
+        to_addr = to if to.startswith("whatsapp:") else f"whatsapp:{to}"
+        message = await asyncio.to_thread(
+            self._client.messages.create,
+            from_=settings.twilio_whatsapp_from,
+            to=to_addr,
+            media_url=[media_url],
+        )
+        return message.sid
 
     async def send_template(self, to: str, template_sid: str, variables: dict[str, str]) -> str:
         """§03 §3.4: the sandbox's fixed pre-approved templates, sent by

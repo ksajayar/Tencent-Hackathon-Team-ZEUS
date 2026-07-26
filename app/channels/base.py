@@ -5,9 +5,12 @@ from typing import Protocol
 
 @dataclass
 class MediaRef:
-    local_path: str
+    """Captured at webhook time, before download - WEBHOOK-1 says persist and
+    enqueue, not process; the owning pipeline (currently voice, §06) fetches
+    remote_url itself in the background and only then knows local_path/sha256."""
+
+    remote_url: str
     mime_type: str
-    sha256: str
 
 
 @dataclass

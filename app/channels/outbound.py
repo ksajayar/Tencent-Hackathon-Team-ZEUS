@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.channels.twilio_whatsapp import provider
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.core.security import generate_media_token
 from app.db.models.message import Message
 from app.db.models.outbound_queue import OutboundQueueEntry
 from app.db.models.reminder import Reminder
@@ -119,6 +120,37 @@ async def send_reminder(
         session, user=user, conversation_id=conversation_id, channel_sid=sid, body=body
     )
     logger.info("outbound_reminder_sent", user_id=str(user.id), message_sid=sid, via="template")
+    return message
+
+
+async def send_audio(
+    session: AsyncSession, user: User, conversation_id: uuid.UUID, *, filename: str, body_text: str
+) -> Message | None:
+    """CHANNEL-2/3: always a second, separate send after the text reply -
+    never combined with a Body, and only OGG/Opus renders as a playable
+    voice note rather than a file attachment. `body_text` (the same words
+    just spoken) is stored so 'say that again' still works after a voice
+    reply. Window-closed case: the paired text reply was already queued by
+    send_text, so there's no fresh pairing to synthesize audio for here -
+    log and skip rather than send an orphaned voice note later."""
+    if not window_open(user):
+        logger.warning("audio_reply_skipped_window_closed", user_id=str(user.id))
+        return None
+
+    await _throttle()
+    token = generate_media_token(filename)
+    media_url = f"{settings.public_base_url.rstrip('/')}/media/{token}"
+    sid = await provider.send_media(user.phone_e164, media_url, "audio/ogg")
+
+    message = await conversation_service.record_outbound_message(
+        session,
+        user=user,
+        conversation_id=conversation_id,
+        channel_sid=sid,
+        body=body_text,
+        kind="audio",
+    )
+    logger.info("outbound_audio_sent", user_id=str(user.id), message_sid=sid)
     return message
 
 
