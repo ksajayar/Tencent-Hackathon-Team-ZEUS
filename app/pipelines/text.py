@@ -112,7 +112,10 @@ async def _general_qa(
         session, conversation_id=conversation_id, exclude_message_id=message_id
     )
     events = await calendar_service.get_schedule_window(session, user.id, tz_name=user.timezone)
-    context_block = build_context(user=user, history=history, events=events)
+    active_medications = await medications_service.get_active_medications(session, user.id)
+    context_block = build_context(
+        user=user, history=history, events=events, medications=active_medications
+    )
     persona = PERSONA_ZH if reply_language == "zh-Hans" else PERSONA_EN
     prompt = f"{context_block}\n\nThe patient just said: {text}"
 

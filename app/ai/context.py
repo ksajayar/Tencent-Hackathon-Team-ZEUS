@@ -2,6 +2,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from app.db.models.calendar import CalendarEvent
+from app.db.models.medication import Medication
 from app.db.models.message import Message
 from app.db.models.user import User
 
@@ -12,12 +13,20 @@ MAX_HISTORY_TURNS = 6
 
 
 def build_context(
-    *, user: User, history: list[Message], events: list[CalendarEvent] | None = None
+    *,
+    user: User,
+    history: list[Message],
+    events: list[CalendarEvent] | None = None,
+    medications: list[Medication] | None = None,
 ) -> str:
     """Pure formatter: no DB access, so it's testable without a session.
 
-    The medications/contacts/emails blocks described in the blueprint land as
-    their tables do (M5/M7). M4 adds <schedule> (§05 §5.1).
+    The contacts/emails blocks land as their tables do (M7+). <schedule> (M4)
+    and <medications> (M5) are here (§05 §5.1) so a medication-adjacent
+    question that doesn't match the dedicated regex fast path (§07 §7.6)
+    still gets answered from real, verified data instead of the model
+    guessing - medication_guard itself only applies to the deterministic
+    template/query paths, not this free-text one (see medication_guard.py).
     """
     now_local = datetime.now(ZoneInfo(user.timezone))
     today = now_local.strftime("%A, %d %B %Y")
@@ -27,6 +36,7 @@ def build_context(
         f"preferred language: {user.preferred_language}, timezone: {user.timezone}</patient>"
     )
     today_block = f"<today>{today}</today>"
+    medications_block = _format_medications(medications or [])
     schedule_block = _format_schedule(events or [], user.timezone)
 
     lines = []
@@ -37,7 +47,16 @@ def build_context(
         lines.append(f"{speaker}: {message.body}")
     conversation_block = "<conversation>\n" + "\n".join(lines) + "\n</conversation>"
 
-    return "\n".join([patient_block, today_block, schedule_block, conversation_block])
+    return "\n".join(
+        [patient_block, today_block, medications_block, schedule_block, conversation_block]
+    )
+
+
+def _format_medications(medications: list[Medication]) -> str:
+    if not medications:
+        return "<medications>No medications on file.</medications>"
+    lines = [f"{m.name}: {m.dose_text} - {m.instruction_en}" for m in medications]
+    return "<medications>\n" + "\n".join(lines) + "\n</medications>"
 
 
 def _format_schedule(events: list[CalendarEvent], tz_name: str) -> str:
