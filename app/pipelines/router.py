@@ -2,8 +2,10 @@ import uuid
 
 from app.channels.base import InboundMessage
 from app.core.logging import get_logger
+from app.pipelines import contact as contact_pipeline
 from app.pipelines import document as document_pipeline
 from app.pipelines import image as image_pipeline
+from app.pipelines import location as location_pipeline
 from app.pipelines import text as text_pipeline
 from app.pipelines import voice as voice_pipeline
 
@@ -53,5 +55,23 @@ async def route_inbound(
         )
         return
 
-    # location/contact pipelines land in M9.
-    logger.info("pipeline_kind_not_yet_handled", kind=inbound.kind)
+    if inbound.kind == "location" and inbound.coords:
+        await location_pipeline.handle(
+            user_id=user_id,
+            conversation_id=conversation_id,
+            message_id=message_id,
+            lat=inbound.coords[0],
+            lon=inbound.coords[1],
+        )
+        return
+
+    if inbound.kind == "contact" and inbound.media:
+        await contact_pipeline.handle(
+            user_id=user_id,
+            conversation_id=conversation_id,
+            message_id=message_id,
+            media=inbound.media,
+        )
+        return
+
+    logger.info("pipeline_kind_not_handled", kind=inbound.kind)

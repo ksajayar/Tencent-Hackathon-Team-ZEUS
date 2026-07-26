@@ -1,5 +1,7 @@
 import uuid
+from datetime import UTC, datetime, timedelta
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import gemini_client
@@ -7,6 +9,7 @@ from app.channels import media as media_channel
 from app.channels import outbound
 from app.channels.base import MediaRef
 from app.core.logging import get_logger
+from app.db.models.location import LocationPing
 from app.db.models.media import MediaFile
 from app.db.models.user import User
 from app.db.session import async_session
@@ -22,6 +25,24 @@ from app.services import medication_candidates as candidates_service
 from app.vision import image as image_preprocessing
 
 logger = get_logger(__name__)
+
+# §06 §6.4: only use a location_ping this fresh as scene context.
+LOCATION_HINT_MAX_AGE = timedelta(hours=1)
+
+
+async def _recent_location_hint(session: AsyncSession, user_id: uuid.UUID) -> str | None:
+    result = await session.execute(
+        select(LocationPing)
+        .where(LocationPing.user_id == user_id)
+        .order_by(LocationPing.created_at.desc())
+        .limit(1)
+    )
+    ping = result.scalar_one_or_none()
+    if ping is None or datetime.now(UTC) - ping.created_at > LOCATION_HINT_MAX_AGE:
+        return None
+    if ping.address:
+        return ping.address
+    return f"approximately {ping.lat}, {ping.lon}"
 
 
 def _pick(bilingual: dict, language: str) -> str:
@@ -83,9 +104,12 @@ async def handle(
         session.add(media_file)
         await session.flush()
 
+        location_hint = await _recent_location_hint(session, user_id)
+
         result = await gemini_client.analyze_image(
             image_bytes=preprocessed,
             mime_type="image/jpeg",
+            location_hint=location_hint,
             pipeline="image.analyze",
             user_id=user.id,
         )

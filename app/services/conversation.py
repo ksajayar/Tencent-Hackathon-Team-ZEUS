@@ -74,7 +74,12 @@ async def record_outbound_message(
     channel_sid: str,
     body: str,
     kind: str = "text",
+    meta: dict | None = None,
 ) -> Message:
+    """`meta` (M9): used to correlate a follow-up yes/no reply with the
+    question that prompted it - e.g. {"pending_emergency_contact_id": "..."}
+    on the "should I call them in an emergency?" message - without adding a
+    schema-wide conversation-state table for one short-lived flag."""
     message = Message(
         conversation_id=conversation_id,
         user_id=user.id,
@@ -83,6 +88,7 @@ async def record_outbound_message(
         kind=kind,
         body=body,
         status="sent",
+        meta=meta or {},
     )
     session.add(message)
     await session.flush()

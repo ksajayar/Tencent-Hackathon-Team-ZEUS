@@ -25,7 +25,9 @@ scheduler = AsyncIOScheduler(
 def start() -> None:
     from app.jobs.ack_watchdog import check_unacked_reminders
     from app.jobs.calendar_sync import sync_all_calendars
+    from app.jobs.checkin_watchdog import check_stale_checkins
     from app.jobs.email_sync import sync_all_gmail
+    from app.jobs.location_checkin import send_checkin_requests
     from app.jobs.medication_sync import sync_all_medication_reminders
     from app.jobs.outbound_flush import flush_outbound_queue
     from app.jobs.reminders import fire_due_reminders
@@ -86,6 +88,24 @@ def start() -> None:
         "interval",
         minutes=10,
         id="ack_watchdog",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        send_checkin_requests,
+        "cron",
+        # §09: "configurable, default 2x/day" - 10:00 and 16:00 in
+        # DEFAULT_TIMEZONE (Asia/Singapore, fixed UTC+8, no DST), expressed
+        # in UTC because the scheduler itself runs on timezone="UTC" above.
+        hour="2,8",
+        minute=0,
+        id="location_check_in",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        check_stale_checkins,
+        "interval",
+        minutes=5,
+        id="checkin_watchdog",
         replace_existing=True,
     )
     scheduler.start()

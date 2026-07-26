@@ -1,5 +1,6 @@
 import re
 import uuid
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,6 +10,7 @@ from app.ai.prompts.persona import PERSONA_EN, PERSONA_ZH
 from app.channels import outbound
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.db.models.contact import Contact
 from app.db.models.message import Message
 from app.db.models.reminder import ReminderAck
 from app.db.models.user import User
@@ -16,18 +18,21 @@ from app.db.session import async_session
 from app.google import oauth as google_oauth
 from app.i18n.strings import (
     CONNECT_GOOGLE_LINK,
+    CONTACT_EMERGENCY_NO,
+    CONTACT_EMERGENCY_YES,
     GEMINI_DEGRADED,
     MEDICATION_ACK_CONFIRMATION,
     MEDICATION_GUARD_FALLBACK,
     NO_IMPORTANT_EMAILS,
     NO_MEDICATIONS,
 )
-from app.safety import medication_guard
+from app.safety import medication_guard, sos
 from app.safety.simplifier import simplify
 from app.services import calendar as calendar_service
 from app.services import conversation as conversation_service
 from app.services import email as email_service
 from app.services import medications as medications_service
+from app.services.contacts import get_emergency_contacts
 from app.speech import tts
 
 logger = get_logger(__name__)
@@ -92,6 +97,20 @@ _ACK_PHRASES = ["ok", "okay", "done", "taken", "took it", "好", "好的", "吃�
 _ACK_RE = re.compile(
     r"^\s*(" + "|".join(re.escape(p) for p in _ACK_PHRASES) + r")\s*[.!。！]?\s*$", re.IGNORECASE
 )
+
+# §07 §7.11 emergency-contact yes/no confirmation. Deliberately overlaps with
+# _ACK_PHRASES ("ok"/"好") - _confirm_emergency_contact is checked first and
+# only actually short-circuits when a question is genuinely pending
+# (message.meta), same narrow-both-ends reasoning as the ack regex above.
+_YES_PHRASES = ["yes", "yeah", "yep", "sure", "ok", "okay", "是", "是的", "可以", "好", "好的"]
+_NO_PHRASES = ["no", "nope", "not", "不", "不要", "不是"]
+_YES_RE = re.compile(
+    r"^\s*(" + "|".join(re.escape(p) for p in _YES_PHRASES) + r")\s*[.!。！]?\s*$", re.IGNORECASE
+)
+_NO_RE = re.compile(
+    r"^\s*(" + "|".join(re.escape(p) for p in _NO_PHRASES) + r")\s*[.!。！]?\s*$", re.IGNORECASE
+)
+EMERGENCY_CONFIRM_WINDOW = timedelta(minutes=15)
 
 
 def detect_language(text: str, *, fallback: str) -> tuple[str | None, str]:
@@ -198,6 +217,44 @@ async def _ack_reminder(
     return MEDICATION_ACK_CONFIRMATION.get(reply_language, MEDICATION_ACK_CONFIRMATION["en"])
 
 
+async def _confirm_emergency_contact(
+    session: AsyncSession, user: User, text: str, reply_language: str
+) -> str | None:
+    """§07 §7.11: resolves the yes/no answer to 'should I call them in an
+    emergency?'. The pending question is tracked on the last outbound
+    message's `meta` (set by app/pipelines/contact.py), not a new
+    conversation-state table. Returns None (falls through to ack/general_qa)
+    when there is no pending question, it has expired, or the text is
+    neither a yes nor a no - same narrow-both-ends shape as _ack_reminder."""
+    last = await conversation_service.get_last_outbound_message(session, user.id)
+    if last is None or not last.meta:
+        return None
+    pending_id = last.meta.get("pending_emergency_contact_id")
+    if not pending_id:
+        return None
+    if datetime.now(UTC) - last.created_at > EMERGENCY_CONFIRM_WINDOW:
+        return None
+
+    is_yes = bool(_YES_RE.match(text))
+    if not is_yes and not _NO_RE.match(text):
+        return None
+
+    contact = await session.get(Contact, uuid.UUID(pending_id))
+    if contact is None:
+        return None
+
+    if is_yes:
+        existing = await get_emergency_contacts(session, user.id)
+        contact.is_emergency = True
+        contact.priority = len(existing) + 1
+        await session.flush()
+        logger.info("emergency_contact_confirmed", contact_id=str(contact.id))
+        template = CONTACT_EMERGENCY_YES.get(reply_language, CONTACT_EMERGENCY_YES["en"])
+    else:
+        template = CONTACT_EMERGENCY_NO.get(reply_language, CONTACT_EMERGENCY_NO["en"])
+    return template.format(name=contact.display_name)
+
+
 async def _generate_reply(
     session: AsyncSession,
     user: User,
@@ -208,6 +265,12 @@ async def _generate_reply(
 ) -> str:
     if _CONNECT_GOOGLE_RE.search(text):
         return await _connect_google(session, user, reply_language)
+
+    if _YES_RE.match(text) or _NO_RE.match(text):
+        contact_reply = await _confirm_emergency_contact(session, user, text, reply_language)
+        if contact_reply is not None:
+            return contact_reply
+        # No pending emergency-contact question - fall through normally.
 
     if _ACK_RE.match(text):
         ack_reply = await _ack_reminder(session, user, message_id, reply_language)
@@ -263,6 +326,17 @@ async def handle(
         if message is not None:
             message.detected_language = stored_label
             await session.flush()
+
+        if sos.is_sos_trigger(text):
+            # CLAUDE.md SAFETY-2: deterministic, checked before every other
+            # intent and before any LLM call - an outage elsewhere in this
+            # function must never be able to swallow an SOS.
+            reply_text = await sos.trigger(
+                session, user=user, trigger_text=text, reply_language=reply_language
+            )
+            await outbound.send_text(session, user, conversation_id, reply_text)
+            await session.commit()
+            return
 
         reply_text = await _generate_reply(
             session, user, conversation_id, message_id, text, reply_language

@@ -37,5 +37,8 @@ python-magic==0.4.27  # needs libmagic1 (already in the Dockerfile, M0)
 Pillow==11.1.0
 pypdf==5.1.0
 
+# --- M9: Location, SOS & contacts ---
+vobject==0.9.7
+
 # Later milestones add: httpx, pytest/pytest-asyncio/respx/testcontainers.
 # Do not add ahead of the milestone that needs them.

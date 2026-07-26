@@ -115,3 +115,77 @@ DOCUMENT_OFFER_VOICE = {
     "en": " Would you like me to read this to you?",
     "zh-Hans": " 需要我读给您听吗？",
 }
+
+# --- M9: Location, SOS & contacts ---
+
+SOS_ALERT_TO_CONTACT = {
+    "en": "URGENT: {patient_name} may need help - their WhatsApp assistant detected an "
+    "emergency message.{location} Please check on them now.",
+    "zh-Hans": "紧急：{patient_name}可能需要帮助——微信助手检测到一条紧急消息。"
+    "{location}请立即联系或前去查看。",
+}
+
+SOS_CONFIRMATION = {
+    "en": "I have told {name}. Stay where you are. Help is coming.",
+    "zh-Hans": "我已经通知了{name}。请留在原地，帮助马上就到。",
+}
+
+SOS_NO_CONTACT = {
+    "en": "I don't have anyone to call. Please call 995.",
+    "zh-Hans": "我这里没有可以联系的人，请拨打995。",
+}
+
+SOS_SEND_FAILED = {
+    "en": "I'm having trouble reaching your contacts. Please call 995 if you can.",
+    "zh-Hans": "我暂时联系不上您的家人。如果可以，请拨打995。",
+}
+
+LOCATION_ACK_HOME = {
+    "en": "Thank you, I have your location.",
+    "zh-Hans": "谢谢，我已经收到您的位置了。",
+}
+
+LOCATION_ACK_OUTSIDE_ZONE = {
+    "en": "Thank you. I've let your caregiver know where you are.",
+    "zh-Hans": "谢谢。我已经把您的位置告诉您的照顾者了。",
+}
+
+SAFE_ZONE_ALERT_TO_CONTACT = {
+    "en": "{patient_name} shared their location outside their usual safe areas: {place}.",
+    "zh-Hans": "{patient_name}分享了不在常去安全区域内的位置：{place}。",
+}
+
+LOCATION_ACK_NO_CONTACT = {
+    "en": "Thank you for sharing your location. I don't have a caregiver contact saved yet.",
+    "zh-Hans": "谢谢您分享位置。我这里还没有保存照顾者的联系方式。",
+}
+
+CONTACT_UNREADABLE = {
+    "en": "I couldn't read that contact card. Could you send it again?",
+    "zh-Hans": "我读不了这张联系人名片，可以再发一次吗？",
+}
+
+CONTACT_SAVED_ASK_EMERGENCY = {
+    "en": "I've saved {name} as a contact. Should I call them if there's an emergency?",
+    "zh-Hans": "我已经把{name}保存为联系人。如果有紧急情况，需要我联系他们吗？",
+}
+
+CONTACT_EMERGENCY_YES = {
+    "en": "Good, I'll call {name} first if you ever need help.",
+    "zh-Hans": "好的，如果您需要帮助，我会先联系{name}。",
+}
+
+CONTACT_EMERGENCY_NO = {
+    "en": "Okay, I won't call {name} in an emergency.",
+    "zh-Hans": "好的，紧急情况下我不会联系{name}。",
+}
+
+CHECKIN_PROMPT = {
+    "en": "Hello! Where are you now? Tap to share your location with me.",
+    "zh-Hans": "您好！您现在在哪里？点一下分享您的位置给我吧。",
+}
+
+CHECKIN_NO_RESPONSE_ALERT = {
+    "en": "{patient_name} has not replied to a check-in message for 20 minutes.",
+    "zh-Hans": "{patient_name}已经20分钟没有回复问候消息了。",
+}

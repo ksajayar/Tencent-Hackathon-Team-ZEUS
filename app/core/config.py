@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     # (out-of-window reminders log and skip) rather than crashing the app;
     # look it up via GET /internal/debug/templates.
     twilio_appointment_template_sid: str | None = None
+    # Seeds one is_emergency=true contact for the demo (§09 seed step) so the
+    # SOS "Done when" check has a real second phone to alert without a vCard
+    # upload first. Optional; seed.py skips contact seeding when unset.
+    demo_emergency_contact_phone: str | None = None
 
     # AI
     gemini_api_key: str

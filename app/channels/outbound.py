@@ -42,28 +42,43 @@ async def _throttle() -> None:
 
 
 async def _send_free_form(
-    session: AsyncSession, user: User, conversation_id: uuid.UUID, body: str
+    session: AsyncSession,
+    user: User,
+    conversation_id: uuid.UUID,
+    body: str,
+    *,
+    meta: dict | None = None,
 ) -> Message:
     await _throttle()
     sid = await provider.send_text(user.phone_e164, body)
     message = await conversation_service.record_outbound_message(
-        session, user=user, conversation_id=conversation_id, channel_sid=sid, body=body
+        session, user=user, conversation_id=conversation_id, channel_sid=sid, body=body, meta=meta
     )
     logger.info("outbound_sent", user_id=str(user.id), message_sid=sid)
     return message
 
 
 async def send_text(
-    session: AsyncSession, user: User, conversation_id: uuid.UUID, body: str
+    session: AsyncSession,
+    user: User,
+    conversation_id: uuid.UUID,
+    body: str,
+    *,
+    meta: dict | None = None,
 ) -> Message | None:
     """The only function allowed to send outbound WhatsApp text (CHANNEL-1).
 
     Inside the 24h window: sends free-form immediately. Outside it: parks in
     outbound_queue (status=awaiting_window) rather than dropping - the
     flush_outbound_queue job (§09) sends it once the window reopens.
+
+    `meta` (M9): only applied on the immediate-send path - a queued send has
+    no `messages` row yet to attach it to, so a pending-confirmation flow
+    started while the window is closed simply doesn't track state (the
+    window being closed already means the demo's happy path doesn't apply).
     """
     if window_open(user):
-        return await _send_free_form(session, user, conversation_id, body)
+        return await _send_free_form(session, user, conversation_id, body, meta=meta)
 
     session.add(OutboundQueueEntry(user_id=user.id, body=body, status="awaiting_window"))
     await session.flush()
@@ -152,6 +167,25 @@ async def send_audio(
     )
     logger.info("outbound_audio_sent", user_id=str(user.id), message_sid=sid)
     return message
+
+
+async def send_urgent(to_phone_e164: str, body: str) -> str | None:
+    """CLAUDE.md SAFETY-2 / §07 §7.9 + §7.10: SOS and safe-zone-breach alerts
+    to an emergency contact's own phone. Bypasses the 24h window entirely -
+    unlike send_text, an emergency alert must attempt delivery immediately,
+    never park in outbound_queue awaiting a window that may not reopen in
+    time. There is no `conversations` row for a third-party contact, so this
+    doesn't persist a `messages` row either - the caller (app/safety/sos.py)
+    records the outcome in `sos_events.notified`. Returns the Twilio SID on
+    success, None on failure so the caller can try the next contact."""
+    await _throttle()
+    try:
+        sid = await provider.send_text(to_phone_e164, body)
+    except Exception:
+        logger.exception("urgent_send_failed")
+        return None
+    logger.info("urgent_sent")
+    return sid
 
 
 async def flush_awaiting_window(session: AsyncSession) -> int:

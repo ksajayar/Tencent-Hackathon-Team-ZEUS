@@ -13,14 +13,17 @@ from app.core.config import settings
 from app.core.deps import get_db
 from app.core.security import require_admin_token
 from app.db.models.calendar import CalendarEvent
+from app.db.models.contact import Contact
 from app.db.models.document import Document
 from app.db.models.email import EmailCache
 from app.db.models.google import OAuthToken
+from app.db.models.location import LocationPing, SafeZone
 from app.db.models.media import MediaFile, Transcript
 from app.db.models.medication import Medication, MedicationCandidate
 from app.db.models.message import Message
 from app.db.models.outbound_queue import OutboundQueueEntry
 from app.db.models.reminder import Reminder, ReminderAck
+from app.db.models.sos import SosEvent
 from app.db.models.user import User
 from app.jobs.calendar_sync import sync_all_calendars
 from app.jobs.email_sync import sync_all_gmail
@@ -322,6 +325,82 @@ async def debug_vision(session: AsyncSession = Depends(get_db)) -> dict:
                 "was_scanned": d.was_scanned,
             }
             for d in documents
+        ],
+    }
+
+
+@router.get("/debug/location", dependencies=[Depends(require_admin_token)])
+async def debug_location(session: AsyncSession = Depends(get_db)) -> dict:
+    """Read-only snapshot of contacts/location_pings/safe_zones/sos_events,
+    for verifying M9 (zone matching, SOS contact selection + rate limiting)
+    without log-diving - same reasoning as /debug/voice. Coordinates are
+    shown here deliberately (unlike structured logs, DATA-2's coordinate ban
+    is about the log stream) since this is the one place they need
+    eyeballing to confirm a zone match worked."""
+    contacts = (
+        (
+            await session.execute(
+                select(Contact).order_by(Contact.is_emergency.desc(), Contact.priority)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    pings = (
+        (await session.execute(select(LocationPing).order_by(LocationPing.created_at.desc())))
+        .scalars()
+        .all()
+    )
+    zones = (await session.execute(select(SafeZone))).scalars().all()
+    events = (
+        (await session.execute(select(SosEvent).order_by(SosEvent.triggered_at.desc())))
+        .scalars()
+        .all()
+    )
+
+    return {
+        "contacts": [
+            {
+                "id": str(c.id),
+                "user_id": str(c.user_id),
+                "display_name": c.display_name,
+                "relationship": c.relationship,
+                "is_emergency": c.is_emergency,
+                "priority": c.priority,
+                "source": c.source,
+            }
+            for c in contacts
+        ],
+        "location_pings": [
+            {
+                "id": str(p.id),
+                "user_id": str(p.user_id),
+                "lat": float(p.lat),
+                "lon": float(p.lon),
+                "created_at": p.created_at.isoformat(),
+            }
+            for p in pings
+        ],
+        "safe_zones": [
+            {
+                "id": str(z.id),
+                "user_id": str(z.user_id),
+                "name": z.name,
+                "kind": z.kind,
+                "radius_m": z.radius_m,
+                "active": z.active,
+            }
+            for z in zones
+        ],
+        "sos_events": [
+            {
+                "id": str(e.id),
+                "user_id": str(e.user_id),
+                "triggered_at": e.triggered_at.isoformat(),
+                "notified": e.notified,
+                "resolved_at": e.resolved_at.isoformat() if e.resolved_at else None,
+            }
+            for e in events
         ],
     }
 
