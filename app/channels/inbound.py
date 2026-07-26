@@ -24,10 +24,10 @@ def _detect_kind(form: dict) -> str:
 def parse_inbound(form: dict) -> InboundMessage:
     """Normalize a Twilio webhook form payload into the internal shape.
 
-    M6 scope: 'text' carries `text`, 'audio' carries `media` (downloaded by
-    the voice pipeline in the background - never here, per WEBHOOK-1). Other
-    kinds are still classified correctly for storage, but their pipelines
-    (vision, document, location, contact) land in later milestones.
+    'text' carries `text`; 'audio'/'image'/'document' carry `media`
+    (downloaded by the owning pipeline in the background - never here, per
+    WEBHOOK-1). 'location' and 'contact' are still classified correctly for
+    storage, but their pipelines land in M9.
     """
     kind = _detect_kind(form)
     wa_id = form.get("WaId", "")
@@ -42,7 +42,7 @@ def parse_inbound(form: dict) -> InboundMessage:
             coords = (float(lat), float(lon))
 
     media = None
-    if kind == "audio":
+    if kind in ("audio", "image", "document"):
         media_url = form.get("MediaUrl0")
         if media_url:
             media = MediaRef(remote_url=media_url, mime_type=form.get("MediaContentType0", ""))

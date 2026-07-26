@@ -294,6 +294,166 @@ def _parse_classification_json(raw: str) -> list[dict] | None:
         return None
 
 
+_VISION_PROMPT = """Look at this photo for an elderly dementia patient's WhatsApp assistant. \
+Classify it and extract what's useful, in one pass.
+
+First decide "kind":
+- "pill_bottle": a medicine bottle, blister pack, or pill box label.
+- "prescription": a prescription slip, lab report, appointment letter, or discharge note.
+- "document": any other printed or handwritten document, form, or letter.
+- "scene": a place, street, room, or object - not a document, not a person.
+- "person": a photo of one or more people.
+- "other": anything that doesn't fit above.
+
+If it is a pill_bottle or prescription, also extract the printed text VERBATIM in its original \
+script - never translate or paraphrase it in that field, and never add anything that isn't \
+printed on the label or page. Never state a dose, frequency, or instruction as advice to take -\
+ only report what is printed as text.
+
+For "person" images, describe generically ("two people smiling in a garden") - never attempt to \
+identify anyone, even if they might be a known contact. For "scene" images, describe simply and \
+concretely, e.g. what kind of place this looks like.
+
+Respond with raw JSON only, no markdown fences, in exactly this shape:
+{"kind": "pill_bottle|prescription|document|scene|person|other",
+ "text_verbatim": "verbatim printed text, original script, empty string if none",
+ "script": "han|latin|mixed|none",
+ "structured": {"drug_name": null, "dose": null, "frequency": null},
+ "description_en": "two or three simple, short sentences in English",
+ "description_zh": "the same meaning, in Simplified Chinese",
+ "confidence": 0.0-1.0}
+"""
+
+
+def _parse_vision_json(raw: str) -> dict | None:
+    cleaned = raw.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`").removeprefix("json").strip()
+    try:
+        data = json.loads(cleaned)
+        structured = data.get("structured") or {}
+        return {
+            "kind": data.get("kind") or "other",
+            "text_verbatim": str(data.get("text_verbatim", "")).strip(),
+            "script": data.get("script") or "none",
+            "structured": {
+                "drug_name": structured.get("drug_name"),
+                "dose": structured.get("dose"),
+                "frequency": structured.get("frequency"),
+            },
+            "description_en": str(data.get("description_en", "")).strip(),
+            "description_zh": str(data.get("description_zh", "")).strip(),
+            "confidence": float(data.get("confidence", 0.0)),
+        }
+    except (json.JSONDecodeError, ValueError, TypeError, AttributeError):
+        logger.warning("gemini_vision_parse_failed")
+        return None
+
+
+async def analyze_image(
+    *,
+    image_bytes: bytes,
+    mime_type: str,
+    location_hint: str | None = None,
+    pipeline: str,
+    model: str | None = None,
+    user_id: uuid.UUID | None = None,
+) -> dict | None:
+    """§05 §5.3 + §06 §6.3/§6.4: one call classifies AND extracts - never a
+    second call for OCR, per the one-AI-call-per-message rule (§05 §5.7).
+    `location_hint` folds in the most recent location_ping (if <1h old) as
+    optional scene context, rather than a separate call after the fact.
+
+    Returns the parsed dict or None on failure/unparseable output - callers
+    must have a degraded-mode fallback.
+    """
+    prompt = _VISION_PROMPT
+    if location_hint:
+        prompt += (
+            f'\nThe patient\'s last known location (within the past hour): "{location_hint}". '
+            "Only use this if the photo looks like it could be taken there; ignore it otherwise."
+        )
+    image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
+    response = await _call_model(
+        system_prompt=(
+            "You are a careful vision assistant for an elderly dementia patient. You never "
+            "diagnose, never confirm a photographed medicine as the patient's own prescribed "
+            "medication, and never identify people from photos."
+        ),
+        contents=[prompt, image_part],
+        pipeline=pipeline,
+        model=model or settings.gemini_model_main,
+        user_id=user_id,
+        timeout_seconds=MEDIA_TIMEOUT_SECONDS,
+    )
+    if response is None or not response.text:
+        return None
+    return _parse_vision_json(response.text)
+
+
+_DOCUMENT_PROMPT = """This PDF was sent by an elderly dementia patient over WhatsApp. Summarise \
+it for the patient and their caregiver.
+
+Identify what kind of document this is, who it is from, and any key dates. Write the summary at \
+a logistics level only - what the document is and what the patient is being asked to do (e.g. \
+"this is a prescription from Dr Tan dated 12 July - please check with your caregiver"). Never \
+extract medication names, doses, or instructions as actionable advice to take; if the document \
+mentions medicine, say only that it mentions medicine and that a caregiver should check it.
+
+Respond with raw JSON only, no markdown fences, in exactly this shape:
+{"doc_kind": "prescription|lab_report|appointment_letter|discharge_note|other",
+ "extracted_text": "the document's text content, verbatim, truncated if very long",
+ "summary_en": "three to five short, simple sentences in English",
+ "summary_zh": "the same meaning, in Simplified Chinese"}
+"""
+
+
+def _parse_document_json(raw: str) -> dict | None:
+    cleaned = raw.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`").removeprefix("json").strip()
+    try:
+        data = json.loads(cleaned)
+        return {
+            "doc_kind": data.get("doc_kind") or "other",
+            "extracted_text": str(data.get("extracted_text", "")).strip(),
+            "summary_en": str(data.get("summary_en", "")).strip(),
+            "summary_zh": str(data.get("summary_zh", "")).strip(),
+        }
+    except (json.JSONDecodeError, ValueError, TypeError, AttributeError):
+        logger.warning("gemini_document_parse_failed")
+        return None
+
+
+async def summarize_document(
+    *,
+    pdf_bytes: bytes,
+    pipeline: str,
+    model: str | None = None,
+    user_id: uuid.UUID | None = None,
+) -> dict | None:
+    """§05 §5.4: sends the PDF bytes directly as a document part - Gemini
+    reads scanned pages as images in the same call, so there's no separate
+    OCR step. Returns None on failure; callers fall back to a pypdf text
+    extract (app/vision/pdf.py) per the degraded-mode contract.
+    """
+    pdf_part = types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf")
+    response = await _call_model(
+        system_prompt=(
+            "You are a careful document-summarising assistant for an elderly dementia "
+            "patient's caregiver-monitored WhatsApp assistant."
+        ),
+        contents=[_DOCUMENT_PROMPT, pdf_part],
+        pipeline=pipeline,
+        model=model or settings.gemini_model_main,
+        user_id=user_id,
+        timeout_seconds=MEDIA_TIMEOUT_SECONDS,
+    )
+    if response is None or not response.text:
+        return None
+    return _parse_document_json(response.text)
+
+
 async def classify_emails(
     *,
     emails: list[dict],

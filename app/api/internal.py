@@ -13,10 +13,11 @@ from app.core.config import settings
 from app.core.deps import get_db
 from app.core.security import require_admin_token
 from app.db.models.calendar import CalendarEvent
+from app.db.models.document import Document
 from app.db.models.email import EmailCache
 from app.db.models.google import OAuthToken
 from app.db.models.media import MediaFile, Transcript
-from app.db.models.medication import Medication
+from app.db.models.medication import Medication, MedicationCandidate
 from app.db.models.message import Message
 from app.db.models.outbound_queue import OutboundQueueEntry
 from app.db.models.reminder import Reminder, ReminderAck
@@ -276,6 +277,51 @@ async def debug_voice(session: AsyncSession = Depends(get_db)) -> dict:
                 "created_at": msg.created_at.isoformat(),
             }
             for msg in messages
+        ],
+    }
+
+
+@router.get("/debug/vision", dependencies=[Depends(require_admin_token)])
+async def debug_vision(session: AsyncSession = Depends(get_db)) -> dict:
+    """Read-only snapshot of medication_candidates + documents, for verifying
+    M8 (sub-routing, confidence floor, SAFETY-1: never touches `medications`)
+    without log-diving - same reasoning as /debug/voice."""
+    candidates = (
+        (
+            await session.execute(
+                select(MedicationCandidate).order_by(MedicationCandidate.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    documents = (
+        (await session.execute(select(Document).order_by(Document.created_at.desc())))
+        .scalars()
+        .all()
+    )
+
+    return {
+        "medication_candidates": [
+            {
+                "id": str(c.id),
+                "patient_id": str(c.patient_id),
+                "extracted": c.extracted,
+                "confidence": float(c.confidence) if c.confidence is not None else None,
+                "status": c.status,
+            }
+            for c in candidates
+        ],
+        "documents": [
+            {
+                "id": str(d.id),
+                "media_id": str(d.media_id),
+                "doc_kind": d.doc_kind,
+                "summary_en": d.summary_en,
+                "summary_zh": d.summary_zh,
+                "was_scanned": d.was_scanned,
+            }
+            for d in documents
         ],
     }
 

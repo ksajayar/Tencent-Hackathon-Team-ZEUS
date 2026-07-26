@@ -33,5 +33,9 @@ python-dateutil==2.9.0.post0
 edge-tts==7.2.8
 python-magic==0.4.27  # needs libmagic1 (already in the Dockerfile, M0)
 
+# --- M8: Vision & documents ---
+Pillow==11.1.0
+pypdf==5.1.0
+
 # Later milestones add: httpx, pytest/pytest-asyncio/respx/testcontainers.
 # Do not add ahead of the milestone that needs them.
