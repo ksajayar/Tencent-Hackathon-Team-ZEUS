@@ -14,7 +14,9 @@ from app.core.deps import get_db
 from app.core.security import require_admin_token
 from app.db.models.calendar import CalendarEvent
 from app.db.models.google import OAuthToken
+from app.db.models.media import MediaFile, Transcript
 from app.db.models.medication import Medication
+from app.db.models.message import Message
 from app.db.models.outbound_queue import OutboundQueueEntry
 from app.db.models.reminder import Reminder, ReminderAck
 from app.db.models.user import User
@@ -199,5 +201,70 @@ async def debug_reminders(session: AsyncSession = Depends(get_db)) -> dict:
                 "scheduled_for": q.scheduled_for.isoformat(),
             }
             for q in queue
+        ],
+    }
+
+
+@router.get("/debug/voice", dependencies=[Depends(require_admin_token)])
+async def debug_voice(session: AsyncSession = Depends(get_db)) -> dict:
+    """Read-only snapshot of media_files/transcripts + recent audio-kind
+    messages, for verifying M6 (transcript accuracy, language detection,
+    inbound+outbound pairing) without log-diving. Transcript text is
+    deliberately included here (unlike structured logs, DATA-2) - it's the
+    one thing that actually needs eyeballing to confirm STT worked."""
+    media_files = (
+        (await session.execute(select(MediaFile).order_by(MediaFile.created_at.desc())))
+        .scalars()
+        .all()
+    )
+    transcripts = (
+        (await session.execute(select(Transcript).order_by(Transcript.created_at.desc())))
+        .scalars()
+        .all()
+    )
+    messages = (
+        (
+            await session.execute(
+                select(Message)
+                .where(Message.kind == "audio")
+                .order_by(Message.created_at.desc())
+                .limit(20)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    return {
+        "media_files": [
+            {
+                "id": str(m.id),
+                "message_id": str(m.message_id),
+                "mime_type": m.mime_type,
+                "size_bytes": m.size_bytes,
+                "duration_ms": m.duration_ms,
+                "sha256": m.sha256,
+            }
+            for m in media_files
+        ],
+        "transcripts": [
+            {
+                "media_id": str(t.media_id),
+                "text": t.text_content,
+                "language": t.language,
+                "confidence": float(t.confidence) if t.confidence is not None else None,
+            }
+            for t in transcripts
+        ],
+        "audio_messages": [
+            {
+                "id": str(msg.id),
+                "direction": msg.direction,
+                "body": msg.body,
+                "detected_language": msg.detected_language,
+                "status": msg.status,
+                "created_at": msg.created_at.isoformat(),
+            }
+            for msg in messages
         ],
     }
