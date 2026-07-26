@@ -19,12 +19,14 @@ from app.i18n.strings import (
     GEMINI_DEGRADED,
     MEDICATION_ACK_CONFIRMATION,
     MEDICATION_GUARD_FALLBACK,
+    NO_IMPORTANT_EMAILS,
     NO_MEDICATIONS,
 )
 from app.safety import medication_guard
 from app.safety.simplifier import simplify
 from app.services import calendar as calendar_service
 from app.services import conversation as conversation_service
+from app.services import email as email_service
 from app.services import medications as medications_service
 from app.speech import tts
 
@@ -66,6 +68,21 @@ _MEDICATION_QUERY_PHRASES = [
 _MEDICATION_QUERY_RE = re.compile(
     "|".join(re.escape(p) for p in _MEDICATION_QUERY_PHRASES), re.IGNORECASE
 )
+
+_EMAIL_QUERY_PHRASES = [
+    "important email",
+    "important emails",
+    "any emails",
+    "any important",
+    "check my email",
+    "check my mail",
+    "my emails",
+    "重要邮件",
+    "邮件",
+    "有邮件吗",
+    "有信吗",
+]
+_EMAIL_QUERY_RE = re.compile("|".join(re.escape(p) for p in _EMAIL_QUERY_PHRASES), re.IGNORECASE)
 
 # Anchored to the whole message (not .search()): "ok" as a substring appears
 # too often in ordinary sentences to safely trigger on a partial match, and
@@ -114,8 +131,13 @@ async def _general_qa(
     )
     events = await calendar_service.get_schedule_window(session, user.id, tz_name=user.timezone)
     active_medications = await medications_service.get_active_medications(session, user.id)
+    important_emails = await email_service.get_important_emails(session, user.id)
     context_block = build_context(
-        user=user, history=history, events=events, medications=active_medications
+        user=user,
+        history=history,
+        events=events,
+        medications=active_medications,
+        emails=important_emails,
     )
     persona = PERSONA_ZH if reply_language == "zh-Hans" else PERSONA_EN
     prompt = f"{context_block}\n\nThe patient just said: {text}"
@@ -148,6 +170,15 @@ async def _medication_query(session: AsyncSession, user: User, reply_language: s
     body = medications_service.render_medication_list(active_medications, reply_language)
     fallback = MEDICATION_GUARD_FALLBACK.get(reply_language, MEDICATION_GUARD_FALLBACK["en"])
     return medication_guard.enforce(body, active_medications, fallback=fallback)
+
+
+async def _email_query(session: AsyncSession, user: User, reply_language: str) -> str:
+    """§04 §4.2: 'any important emails?' - deterministic, no LLM call, the
+    summaries were pre-computed at sync time."""
+    important = await email_service.get_important_emails(session, user.id)
+    if not important:
+        return NO_IMPORTANT_EMAILS.get(reply_language, NO_IMPORTANT_EMAILS["en"])
+    return email_service.render_important_emails(important, reply_language)
 
 
 async def _ack_reminder(
@@ -186,6 +217,9 @@ async def _generate_reply(
 
     if _MEDICATION_QUERY_RE.search(text):
         return await _medication_query(session, user, reply_language)
+
+    if _EMAIL_QUERY_RE.search(text):
+        return await _email_query(session, user, reply_language)
 
     if _REPEAT_RE.search(text):
         last = await conversation_service.get_last_outbound_message(session, user.id)

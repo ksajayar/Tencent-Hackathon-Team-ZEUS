@@ -2,6 +2,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from app.db.models.calendar import CalendarEvent
+from app.db.models.email import EmailCache
 from app.db.models.medication import Medication
 from app.db.models.message import Message
 from app.db.models.user import User
@@ -18,12 +19,13 @@ def build_context(
     history: list[Message],
     events: list[CalendarEvent] | None = None,
     medications: list[Medication] | None = None,
+    emails: list[EmailCache] | None = None,
 ) -> str:
     """Pure formatter: no DB access, so it's testable without a session.
 
-    The contacts/emails blocks land as their tables do (M7+). <schedule> (M4)
-    and <medications> (M5) are here (§05 §5.1) so a medication-adjacent
-    question that doesn't match the dedicated regex fast path (§07 §7.6)
+    The contacts block lands with its table (M9+). <schedule> (M4),
+    <medications> (M5), and <recent_emails> (M7) are here (§05 §5.1) so a
+    question that doesn't match its dedicated regex fast path (§07 §7.6)
     still gets answered from real, verified data instead of the model
     guessing - medication_guard itself only applies to the deterministic
     template/query paths, not this free-text one (see medication_guard.py).
@@ -38,6 +40,7 @@ def build_context(
     today_block = f"<today>{today}</today>"
     medications_block = _format_medications(medications or [])
     schedule_block = _format_schedule(events or [], user.timezone)
+    emails_block = _format_emails(emails or [])
 
     lines = []
     for message in history[-MAX_HISTORY_TURNS:]:
@@ -48,7 +51,14 @@ def build_context(
     conversation_block = "<conversation>\n" + "\n".join(lines) + "\n</conversation>"
 
     return "\n".join(
-        [patient_block, today_block, medications_block, schedule_block, conversation_block]
+        [
+            patient_block,
+            today_block,
+            medications_block,
+            schedule_block,
+            emails_block,
+            conversation_block,
+        ]
     )
 
 
@@ -57,6 +67,13 @@ def _format_medications(medications: list[Medication]) -> str:
         return "<medications>No medications on file.</medications>"
     lines = [f"{m.name}: {m.dose_text} - {m.instruction_en}" for m in medications]
     return "<medications>\n" + "\n".join(lines) + "\n</medications>"
+
+
+def _format_emails(emails: list[EmailCache]) -> str:
+    if not emails:
+        return "<recent_emails>No important emails right now.</recent_emails>"
+    lines = [f"{e.from_name or e.from_addr or 'unknown sender'}: {e.summary_en}" for e in emails]
+    return "<recent_emails>\n" + "\n".join(lines) + "\n</recent_emails>"
 
 
 def _format_schedule(events: list[CalendarEvent], tz_name: str) -> str:

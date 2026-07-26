@@ -11,13 +11,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.channels import outbound
-from app.core.config import settings
 from app.core.logging import get_logger
-from app.core.security import decrypt_token
 from app.db.models.calendar import CalendarEvent
 from app.db.models.google import OAuthToken
 from app.db.models.user import User
-from app.google.tokens import refresh_token_row
+from app.google.tokens import build_credentials, refresh_token_row
 from app.i18n.strings import RESCHEDULED_EVENT
 from app.services import calendar as calendar_service
 from app.services import conversation as conversation_service
@@ -57,18 +55,6 @@ def _parse_when(value: dict) -> tuple[datetime, bool]:
     return dt.astimezone(UTC), False
 
 
-def _build_credentials(token_row: OAuthToken) -> Credentials:
-    # No expiry set: AuthorizedHttp then treats the token as valid until Google
-    # actually 401s, which is the lazy-refresh trigger below (§04 refresh table).
-    return Credentials(
-        token=decrypt_token(token_row.access_token_enc),
-        refresh_token=decrypt_token(token_row.refresh_token_enc),
-        token_uri="https://oauth2.googleapis.com/token",
-        client_id=settings.google_client_id,
-        client_secret=settings.google_client_secret,
-    )
-
-
 def _list_events_sync(credentials: Credentials, *, time_min: str, time_max: str) -> list[dict]:
     service = build("calendar", "v3", credentials=credentials, cache_discovery=False)
     events: list[dict] = []
@@ -100,7 +86,7 @@ async def _fetch_events(
     """Returns (None, error) - not ([], None) - on unrecoverable failure, so the
     caller can tell 'no events' apart from 'sync failed', and so the failure
     reason is available to callers without digging through logs."""
-    credentials = _build_credentials(token_row)
+    credentials = build_credentials(token_row)
     now = datetime.now(UTC)
     time_min = (now - SYNC_WINDOW_PAST).isoformat()
     time_max = (now + SYNC_WINDOW_FUTURE).isoformat()
@@ -125,7 +111,7 @@ async def _fetch_events(
     # Lazy refresh on 401, once, then give up (§04 refresh table).
     if not await refresh_token_row(session, token_row):
         return None, "token_refresh_failed"
-    credentials = _build_credentials(token_row)
+    credentials = build_credentials(token_row)
     try:
         items = await asyncio.to_thread(
             _list_events_sync, credentials, time_min=time_min, time_max=time_max

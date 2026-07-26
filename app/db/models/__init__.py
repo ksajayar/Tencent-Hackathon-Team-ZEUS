@@ -1,5 +1,6 @@
 from app.db.models.ai_usage import AIUsage
 from app.db.models.calendar import CalendarEvent
+from app.db.models.email import EmailCache
 from app.db.models.google import OAuthState, OAuthToken
 from app.db.models.media import MediaFile, Transcript
 from app.db.models.medication import Medication
@@ -22,4 +23,5 @@ __all__ = [
     "OutboundQueueEntry",
     "MediaFile",
     "Transcript",
+    "EmailCache",
 ]

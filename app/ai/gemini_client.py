@@ -16,6 +16,7 @@ logger = get_logger(__name__)
 
 TEXT_TIMEOUT_SECONDS = 15
 MEDIA_TIMEOUT_SECONDS = 45
+BATCH_TIMEOUT_SECONDS = 30  # text-only, but up to 25 items in and a JSON array out
 MAX_ATTEMPTS = 3
 RATE_LIMIT_RPM = 8  # comfortably under the ~10-15 RPM free-tier ceiling
 
@@ -247,3 +248,82 @@ async def transcribe_audio(
     if response is None or not response.text:
         return None
     return _parse_transcription_json(response.text)
+
+
+_CLASSIFY_PROMPT = """Classify each email below for an elderly dementia patient's inbox. \
+For each one decide:
+- category: one of medical, family, appointment, admin, other. Use "medical" for hospitals, \
+clinics, doctors, lab results, pharmacies.
+- priority: 1-5. Use 5 only for something time-sensitive in the next 48 hours.
+- needs_action: true if the patient or their caregiver needs to do something about it.
+- summary_en: one plain-language sentence, no jargon.
+- summary_zh: the same sentence in Simplified Chinese.
+
+Never state a medication name or dose in a summary, even if the email mentions one - medication \
+information only ever comes from a caregiver-verified record, never from an email.
+
+Respond with raw JSON only, no markdown fences, as a JSON array in exactly this shape:
+[{"id": "...", "category": "...", "priority": 1-5, "needs_action": true, \
+"summary_en": "...", "summary_zh": "..."}]
+
+Emails:
+"""
+
+
+def _parse_classification_json(raw: str) -> list[dict] | None:
+    cleaned = raw.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`").removeprefix("json").strip()
+    try:
+        data = json.loads(cleaned)
+        if not isinstance(data, list):
+            return None
+        return [
+            {
+                "id": str(item.get("id", "")),
+                "category": item.get("category") or "other",
+                "priority": max(1, min(5, int(item.get("priority", 1)))),
+                "needs_action": bool(item.get("needs_action", False)),
+                "summary_en": str(item.get("summary_en", "")).strip(),
+                "summary_zh": str(item.get("summary_zh", "")).strip(),
+            }
+            for item in data
+        ]
+    except (json.JSONDecodeError, ValueError, TypeError, AttributeError):
+        logger.warning("gemini_classification_parse_failed")
+        return None
+
+
+async def classify_emails(
+    *,
+    emails: list[dict],
+    pipeline: str,
+    model: str | None = None,
+    user_id: uuid.UUID | None = None,
+) -> list[dict] | None:
+    """§04 §4.2: one call classifies up to 25 emails at once, not one call
+    per email - this is what keeps email summaries pre-computed at sync
+    time so 'any important emails?' costs zero AI calls at read time.
+
+    `emails` items: {"id", "from", "subject", "snippet"}. Returns a list of
+    {"id","category","priority","needs_action","summary_en","summary_zh"}
+    or None on failure - callers must have a degraded-mode fallback.
+    """
+    if not emails:
+        return []
+
+    prompt = _CLASSIFY_PROMPT + json.dumps(emails, ensure_ascii=False)
+    response = await _call_model(
+        system_prompt=(
+            "You are a careful email triage assistant for an elderly dementia "
+            "patient's caregiver-monitored inbox."
+        ),
+        contents=prompt,
+        pipeline=pipeline,
+        model=model or settings.gemini_model_main,
+        user_id=user_id,
+        timeout_seconds=BATCH_TIMEOUT_SECONDS,
+    )
+    if response is None or not response.text:
+        return None
+    return _parse_classification_json(response.text)

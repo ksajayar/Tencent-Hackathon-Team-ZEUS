@@ -57,3 +57,8 @@ VOICE_UNCLEAR = {
     "en": "I didn't quite catch that. Could you say it again?",
     "zh-Hans": "我没听清楚，可以再说一次吗？",
 }
+
+NO_IMPORTANT_EMAILS = {
+    "en": "You have no important emails right now.",
+    "zh-Hans": "您现在没有重要的邮件。",
+}

@@ -72,6 +72,19 @@ async def store_credentials(
     await session.flush()
 
 
+def build_credentials(token_row: OAuthToken) -> Credentials:
+    """Shared by every Google API caller (calendar, gmail, ...). No expiry
+    set: AuthorizedHttp then treats the token as valid until Google actually
+    401s, which is each caller's cue to refresh_token_row once and retry."""
+    return Credentials(
+        token=decrypt_token(token_row.access_token_enc),
+        refresh_token=decrypt_token(token_row.refresh_token_enc),
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=settings.google_client_id,
+        client_secret=settings.google_client_secret,
+    )
+
+
 def _refresh_sync(credentials: Credentials) -> None:
     credentials.refresh(Request())
 

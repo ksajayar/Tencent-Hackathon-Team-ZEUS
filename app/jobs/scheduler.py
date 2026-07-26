@@ -25,6 +25,7 @@ scheduler = AsyncIOScheduler(
 def start() -> None:
     from app.jobs.ack_watchdog import check_unacked_reminders
     from app.jobs.calendar_sync import sync_all_calendars
+    from app.jobs.email_sync import sync_all_gmail
     from app.jobs.medication_sync import sync_all_medication_reminders
     from app.jobs.outbound_flush import flush_outbound_queue
     from app.jobs.reminders import fire_due_reminders
@@ -43,6 +44,13 @@ def start() -> None:
         "interval",
         minutes=15,
         id="sync_calendar",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        sync_all_gmail,
+        "interval",
+        minutes=15,
+        id="sync_gmail",
         replace_existing=True,
     )
     scheduler.add_job(

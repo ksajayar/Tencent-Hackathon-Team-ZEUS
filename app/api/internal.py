@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.deps import get_db
 from app.core.security import require_admin_token
 from app.db.models.calendar import CalendarEvent
+from app.db.models.email import EmailCache
 from app.db.models.google import OAuthToken
 from app.db.models.media import MediaFile, Transcript
 from app.db.models.medication import Medication
@@ -21,6 +22,7 @@ from app.db.models.outbound_queue import OutboundQueueEntry
 from app.db.models.reminder import Reminder, ReminderAck
 from app.db.models.user import User
 from app.jobs.calendar_sync import sync_all_calendars
+from app.jobs.email_sync import sync_all_gmail
 from app.jobs.reminders import fire_one
 from app.services.seed import seed_demo_data
 from app.speech import tts
@@ -33,6 +35,14 @@ async def trigger_calendar_sync() -> dict:
     """Force a Calendar sync now (§09) - lets you test M4 without waiting on
     the 15-minute job or the demo Google account's real event timing."""
     results = await sync_all_calendars()
+    return {"status": "ok", "results": results}
+
+
+@router.post("/sync/gmail", dependencies=[Depends(require_admin_token)])
+async def trigger_gmail_sync() -> dict:
+    """Force a Gmail sync now (§09) - lets you test M7 without waiting on
+    the 15-minute job."""
+    results = await sync_all_gmail()
     return {"status": "ok", "results": results}
 
 
@@ -266,5 +276,44 @@ async def debug_voice(session: AsyncSession = Depends(get_db)) -> dict:
                 "created_at": msg.created_at.isoformat(),
             }
             for msg in messages
+        ],
+    }
+
+
+@router.get("/debug/gmail", dependencies=[Depends(require_admin_token)])
+async def debug_gmail(session: AsyncSession = Depends(get_db)) -> dict:
+    """Read-only snapshot of email_cache, for verifying M7 (classification,
+    priority, the medical-domain floor) without log-diving. Summaries are
+    already meant to be surfaced to the patient over WhatsApp, so showing
+    them here isn't a new exposure - unlike a voice transcript, this isn't
+    borderline (see /debug/voice's note on DATA-2)."""
+    emails = (
+        (
+            await session.execute(
+                select(EmailCache).order_by(
+                    EmailCache.priority.desc(), EmailCache.received_at.desc()
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    return {
+        "emails": [
+            {
+                "id": str(e.id),
+                "user_id": str(e.user_id),
+                "from_addr": e.from_addr,
+                "from_name": e.from_name,
+                "subject": e.subject,
+                "category": e.category,
+                "priority": e.priority,
+                "needs_action": e.needs_action,
+                "summary_en": e.summary_en,
+                "summary_zh": e.summary_zh,
+                "received_at": e.received_at.isoformat() if e.received_at else None,
+            }
+            for e in emails
         ],
     }
