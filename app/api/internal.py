@@ -1,7 +1,9 @@
 import uuid
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +21,7 @@ from app.db.models.user import User
 from app.jobs.calendar_sync import sync_all_calendars
 from app.jobs.reminders import fire_one
 from app.services.seed import seed_demo_data
+from app.speech import tts
 
 router = APIRouter(prefix="/internal")
 
@@ -37,6 +40,15 @@ async def trigger_seed(session: AsyncSession = Depends(get_db)) -> dict:
     result = await seed_demo_data(session)
     await session.commit()
     return {"status": "ok", **result}
+
+
+@router.post("/tts/preview", dependencies=[Depends(require_admin_token)])
+async def trigger_tts_preview(text: str, language: str = "en") -> FileResponse:
+    """Synthesise text and return the OGG directly (§09) - verifies the full
+    edge-tts + ffmpeg-transcode path in one call, without a real voice note."""
+    filename = await tts.synthesize(text, language=language)
+    path = Path(settings.tts_cache_root) / filename
+    return FileResponse(path, media_type="audio/ogg", filename="preview.ogg")
 
 
 @router.post("/reminders/fire/{reminder_id}", dependencies=[Depends(require_admin_token)])
