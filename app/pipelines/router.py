@@ -1,5 +1,6 @@
 import uuid
 
+from app.channels import outbound
 from app.channels.base import InboundMessage
 from app.core.logging import get_logger
 from app.pipelines import contact as contact_pipeline
@@ -19,6 +20,10 @@ async def route_inbound(
     message_id: uuid.UUID,
     inbound: InboundMessage,
 ) -> None:
+    # Fired once here (not per-pipeline) so every kind - text, voice, image,
+    # etc. - shows "typing..." while the slow work (Gemini, STT, OCR) runs.
+    await outbound.send_typing_indicator(inbound.message_sid)
+
     if inbound.kind == "text" and inbound.text:
         await text_pipeline.handle(
             user_id=user_id,

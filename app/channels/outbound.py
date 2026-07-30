@@ -169,6 +169,13 @@ async def send_audio(
     return message
 
 
+async def send_typing_indicator(message_sid: str) -> None:
+    """Not a persisted message and not subject to the throttle/window rules
+    above - a side signal on the inbound message, not an outbound send. Kept
+    behind this module anyway (CHANNEL-1) so provider access stays in one place."""
+    await provider.send_typing_indicator(message_sid)
+
+
 async def send_urgent(to_phone_e164: str, body: str) -> str | None:
     """CLAUDE.md SAFETY-2 / §07 §7.9 + §7.10: SOS and safe-zone-breach alerts
     to an emergency contact's own phone. Bypasses the 24h window entirely -
