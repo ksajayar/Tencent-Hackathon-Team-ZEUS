@@ -63,7 +63,14 @@ def configure_logging() -> None:
             logging.getLevelNamesMapping()[settings.log_level.upper()]
         ),
         context_class=dict,
-        logger_factory=structlog.PrintLoggerFactory(),
+        # PrintLoggerFactory writes via bare print() - stdout is block-buffered
+        # (not line-buffered) once it's not a tty, e.g. piped to a deploy
+        # platform's log collector, so lines can sit unflushed indefinitely.
+        # stdlib LoggerFactory routes through the same handler configured
+        # above via logging.basicConfig, whose StreamHandler flushes on every
+        # record - the same path third-party libs (httpx/Twilio/APScheduler)
+        # already use and that reliably shows up in logs.
+        logger_factory=structlog.stdlib.LoggerFactory(),
         cache_logger_on_first_use=True,
     )
 
