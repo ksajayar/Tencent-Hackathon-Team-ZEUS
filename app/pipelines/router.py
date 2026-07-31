@@ -1,3 +1,4 @@
+import sys
 import uuid
 
 from app.channels import outbound
@@ -20,9 +21,16 @@ async def route_inbound(
     message_id: uuid.UUID,
     inbound: InboundMessage,
 ) -> None:
+    # TEMP DIAG: bypasses structlog entirely to isolate whether typing_indicator_*
+    # logs are missing because of a logger config issue or because this code
+    # path never runs. Remove once the typing-indicator investigation is done.
+    print(f"TYPING_DIAG start sid={inbound.message_sid}", file=sys.stderr, flush=True)
+
     # Fired once here (not per-pipeline) so every kind - text, voice, image,
     # etc. - shows "typing..." while the slow work (Gemini, STT, OCR) runs.
     await outbound.send_typing_indicator(inbound.message_sid)
+
+    print(f"TYPING_DIAG done sid={inbound.message_sid}", file=sys.stderr, flush=True)
 
     if inbound.kind == "text" and inbound.text:
         await text_pipeline.handle(
