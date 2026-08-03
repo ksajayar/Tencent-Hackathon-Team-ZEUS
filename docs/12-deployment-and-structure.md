@@ -56,7 +56,7 @@ Set in Railway → Variables. Never in the repo.
 # Channel
 TWILIO_ACCOUNT_SID=
 TWILIO_AUTH_TOKEN=
-TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
+TWILIO_WHATSAPP_FROM=whatsapp:+13158126378
 
 # AI
 GEMINI_API_KEY=
@@ -269,5 +269,5 @@ services:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-Then `ngrok http 8000` and point the Twilio sandbox webhook at the forwarding URL. For most
+Then `ngrok http 8000` and point the Twilio webhook at the forwarding URL. For most
 development, skip the phone entirely and use `POST /internal/simulate/inbound`.

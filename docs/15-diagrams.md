@@ -14,7 +14,7 @@ graph TB
     subgraph Internet
         PHONE[Patient's phone<br/>WhatsApp]
         BROWSER[Browser<br/>OAuth consent only]
-        TW[Twilio<br/>WhatsApp Sandbox]
+        TW[Twilio<br/>WhatsApp, Meta Business]
         GOOG[Google APIs]
         GEM[Gemini API]
         EDGE[edge-tts endpoint]
@@ -150,7 +150,7 @@ flowchart TD
     L --> M[ffmpeg → OGG/Opus 24kbps]
     M --> N[Cache by sha256]
     N --> O[Send text]
-    O --> P[wait 3s — sandbox throttle]
+    O --> P[wait 3s — outbound throttle]
     P --> Q[Send audio as separate message]
 ```
 

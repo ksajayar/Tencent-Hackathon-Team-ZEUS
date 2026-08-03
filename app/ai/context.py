@@ -6,6 +6,7 @@ from app.db.models.email import EmailCache
 from app.db.models.medication import Medication
 from app.db.models.message import Message
 from app.db.models.user import User
+from app.services import calendar as calendar_service
 
 # Cap the history window here rather than by token-counting; at 6 short WhatsApp
 # turns this comfortably stays well under the ~2000 token budget for the whole
@@ -20,6 +21,7 @@ def build_context(
     events: list[CalendarEvent] | None = None,
     medications: list[Medication] | None = None,
     emails: list[EmailCache] | None = None,
+    speaker_label: str = "patient",
 ) -> str:
     """Pure formatter: no DB access, so it's testable without a session.
 
@@ -29,6 +31,15 @@ def build_context(
     still gets answered from real, verified data instead of the model
     guessing - medication_guard itself only applies to the deterministic
     template/query paths, not this free-text one (see medication_guard.py).
+
+    `speaker_label` (§17): the patient pipeline always passes `user` as both
+    the subject of <patient>/<schedule>/<medications> and the "inbound"
+    speaker in <conversation>, so those are the same person there and the
+    default "patient" label is correct. The caregiver pipeline passes the
+    PATIENT as `user` (the data is about them) but the CAREGIVER's own
+    conversation as `history` - labelling that transcript "patient" would
+    misattribute the caregiver's own words to the person they're asking
+    about, so that caller overrides this to "caregiver".
     """
     now_local = datetime.now(ZoneInfo(user.timezone))
     today = now_local.strftime("%A, %d %B %Y")
@@ -46,7 +57,7 @@ def build_context(
     for message in history[-MAX_HISTORY_TURNS:]:
         if not message.body:
             continue
-        speaker = "patient" if message.direction == "inbound" else "assistant"
+        speaker = speaker_label if message.direction == "inbound" else "assistant"
         lines.append(f"{speaker}: {message.body}")
     conversation_block = "<conversation>\n" + "\n".join(lines) + "\n</conversation>"
 
@@ -79,18 +90,23 @@ def _format_emails(emails: list[EmailCache]) -> str:
 def _format_schedule(events: list[CalendarEvent], tz_name: str) -> str:
     if not events:
         return "<schedule>No events scheduled today or tomorrow.</schedule>"
-    tz = ZoneInfo(tz_name)
-    lines = [_format_event_line(event, tz) for event in events]
+    lines = [_format_event_line(event, tz_name) for event in events]
     return "<schedule>\n" + "\n".join(lines) + "\n</schedule>"
 
 
-def _format_event_line(event: CalendarEvent, tz: ZoneInfo) -> str:
-    local_start = event.start_at.astimezone(tz)
+def _format_event_line(event: CalendarEvent, tz_name: str) -> str:
+    """`when` is pre-rendered in the persona's own register - "tomorrow at 2 in
+    the afternoon", not "Wed 05 Aug 14:00". The model is forbidden to say
+    clock times, so handing it only the clock form made it drop the day and
+    time from the reply rather than convert them (§07 §7.6)."""
+    when = calendar_service.render_when(
+        event.start_at, is_all_day=event.is_all_day, tz_name=tz_name, language="en"
+    )
     if event.is_all_day:
-        when = local_start.strftime("%a %d %b") + " (all day)"
+        when = f"{when} (all day)"
     else:
-        local_end = event.end_at.astimezone(tz)
-        when = f"{local_start.strftime('%a %d %b %H:%M')}-{local_end.strftime('%H:%M')}"
+        until = calendar_service.render_time_of_day(event.end_at, tz_name=tz_name, language="en")
+        when = f"{when}, until {until}"
 
     parts = [f"{when}: {event.summary}"]
     if event.location:

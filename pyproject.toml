@@ -5,6 +5,18 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
+# B008 (flake8-bugbear) flags any function call used as a default argument as
+# a mutable-default-style footgun. FastAPI's `Depends(...)` default is the
+# opposite of that bug - FastAPI's DI system re-evaluates it per request,
+# never shares state across requests - and this codebase uses that exact
+# pattern in every API route (app/api/internal.py, oauth.py, webhooks.py).
+# This is Ruff's own documented fix for the false positive: tell B008 these
+# specific calls are known-safe, rather than rewriting every route to the
+# Annotated[...] form or silencing B008 wholesale (which would also hide a
+# real mutable-default bug elsewhere, e.g. `def f(x=[])`).
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Body", "fastapi.Path"]
+
 [tool.black]
 line-length = 100
 target-version = ["py312"]

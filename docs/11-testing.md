@@ -61,7 +61,7 @@ mocked with `respx`.
 
 ## 11.5 Webhook testing
 
-Locally: `ngrok http 8000`, point the sandbox webhook at the forwarding URL, message from your
+Locally: `ngrok http 8000`, point the webhook at the forwarding URL, message from your
 own WhatsApp. Remember to re-point when ngrok restarts.
 
 Faster loop, no phone: `POST /internal/simulate/inbound`. Use this for 90% of development —

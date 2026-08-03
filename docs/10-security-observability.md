@@ -161,7 +161,7 @@ Universal rules:
 | **TTS (edge-tts) fails** | exception or empty file | Fall back to Google Cloud TTS if configured, else text-only | Text reply, no audio. Never an error. |
 | **ffmpeg missing/fails** | non-zero exit | Text-only reply, `CRITICAL` log | Text reply |
 | **Twilio 63016 (outside window)** | status callback | Re-route through template; indicates a gateway bug | Delayed message |
-| **Twilio 63007 (not joined)** | status callback | Alert operator — the 3-day sandbox expiry | Nothing (they can't receive) |
+| **Twilio 63007** | status callback | On the old sandbox this meant "hasn't joined" - doesn't apply to this number (no join step). Alert operator and check the Console debugger; not independently verified against a production sender. | Nothing (they can't receive) |
 | **Twilio 63005 (media rejected)** | status callback | Log MIME/size/filename, send text-only | Text reply |
 | **Twilio 5xx** | HTTP 5xx | Queue, retry ×3 with backoff | Delayed message |
 | **Media download fails** | HTTP error / timeout | Retry ×2 | "I couldn't open that. Could you send it again?" |

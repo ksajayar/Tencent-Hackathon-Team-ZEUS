@@ -20,9 +20,11 @@ async def handle(
     *, user_id: uuid.UUID, conversation_id: uuid.UUID, message_id: uuid.UUID, media: MediaRef
 ) -> None:
     """§07 §7.11: download -> parse with vobject -> upsert `contacts` -> ask
-    the emergency-contact yes/no question. The question is tracked via the
-    outbound message's `meta` (text.py's _confirm_emergency_contact resolves
-    the answer) rather than a new conversation-state table."""
+    the first of the two contact questions ('call them in an emergency?'). A
+    yes to that one asks the second ('caregiver as well?'); text.py's
+    _confirm_contact_question owns the whole chain. Both pending questions are
+    tracked via the outbound message's `meta` rather than a new
+    conversation-state table."""
     async with async_session() as session:
         user = await session.get(User, user_id)
         if user is None:

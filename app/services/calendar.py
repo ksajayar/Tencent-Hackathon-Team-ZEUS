@@ -47,10 +47,12 @@ def find_conflicts(
 
 
 def render_when(start_at: datetime, *, is_all_day: bool, tz_name: str, language: str) -> str:
-    """Day-relative phrasing for the one templated (non-LLM) calendar message -
-    the reschedule notice fired from the sync job. Everywhere else, the LLM
-    phrases day-relative language itself per the persona rules (§07 §7.6),
-    given the raw local time in the <schedule> context block."""
+    """Day-relative phrasing ("tomorrow at 2 in the afternoon") for the
+    templated (non-LLM) reschedule notice, and for the <schedule> context
+    block. The context block feeds the LLM this phrasing already rendered
+    rather than a raw "14:00" it is then forbidden to echo (§07 §7.6): given
+    only the clock form, the model tended to drop the time from the reply
+    altogether instead of converting it."""
     tz = ZoneInfo(tz_name)
     local = start_at.astimezone(tz)
     delta_days = (local.date() - datetime.now(tz).date()).days
@@ -71,6 +73,13 @@ def render_when(start_at: datetime, *, is_all_day: bool, tz_name: str, language:
     else:
         day_part = f"on {local.day} {local.strftime('%B')}"
     return day_part if is_all_day else f"{day_part} at {_time_phrase_en(local)}"
+
+
+def render_time_of_day(moment: datetime, *, tz_name: str, language: str) -> str:
+    """Just the spoken time part ("3 in the afternoon"), no day. Used for an
+    event's end time, where the day is already carried by render_when."""
+    local = moment.astimezone(ZoneInfo(tz_name))
+    return _time_phrase_zh(local) if language == "zh-Hans" else _time_phrase_en(local)
 
 
 def _time_phrase_en(local: datetime) -> str:

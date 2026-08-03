@@ -256,8 +256,15 @@ For each one decide:
 clinics, doctors, lab results, pharmacies.
 - priority: 1-5. Use 5 only for something time-sensitive in the next 48 hours.
 - needs_action: true if the patient or their caregiver needs to do something about it.
-- summary_en: one plain-language sentence, no jargon.
+- summary_en: one plain-language sentence, no jargon. If the email is about an appointment, \
+visit, or deadline, that sentence must state its date and time, e.g. "Your eye check-up is on \
+5 August at 10 in the morning." Never leave the date or time out to keep the sentence short - \
+this summary is the only record the patient is ever shown.
 - summary_zh: the same sentence in Simplified Chinese.
+
+Each email includes "received", the date it arrived. If the email gives a date relatively \
+("next Tuesday", "tomorrow"), work out the actual date from "received" and use that instead. If \
+the email states no date or time at all, say so plainly - never invent one.
 
 Never state a medication name or dose in a summary, even if the email mentions one - medication \
 information only ever comes from a caregiver-verified record, never from an email.
@@ -396,7 +403,9 @@ it for the patient and their caregiver.
 
 Identify what kind of document this is, who it is from, and any key dates. Write the summary at \
 a logistics level only - what the document is and what the patient is being asked to do (e.g. \
-"this is a prescription from Dr Tan dated 12 July - please check with your caregiver"). Never \
+"this is a prescription from Dr Tan dated 12 July - please check with your caregiver"). If the \
+document gives an appointment or a deadline, the summary must state its date and time and where \
+to go; a summary that mentions an appointment without saying when it is has failed. Never \
 extract medication names, doses, or instructions as actionable advice to take; if the document \
 mentions medicine, say only that it mentions medicine and that a caregiver should check it.
 
@@ -465,7 +474,9 @@ async def classify_emails(
     per email - this is what keeps email summaries pre-computed at sync
     time so 'any important emails?' costs zero AI calls at read time.
 
-    `emails` items: {"id", "from", "subject", "snippet"}. Returns a list of
+    `emails` items: {"id", "from", "subject", "snippet", "received"} - the
+    local-time "received" is what lets a relative date in the snippet ("next
+    Tuesday") be resolved into the summary instead of lost. Returns a list of
     {"id","category","priority","needs_action","summary_en","summary_zh"}
     or None on failure - callers must have a degraded-mode fallback.
     """

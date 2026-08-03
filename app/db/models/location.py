@@ -58,9 +58,17 @@ class SafeZone(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     name: Mapped[str] = mapped_column(Text, nullable=False)
-    center_lat: Mapped[float] = mapped_column(Numeric(9, 6), nullable=False)
-    center_lon: Mapped[float] = mapped_column(Numeric(9, 6), nullable=False)
-    radius_m: Mapped[int] = mapped_column(Integer, nullable=False)
+    # §17 set address: human-readable form, independent of the coordinates -
+    # a caregiver who supplies only text (no location pin) sets this without
+    # ever arming the geofence (no geocoder exists to turn it into lat/lon).
+    address: Mapped[str | None] = mapped_column(Text)
+    # §17: nullable so a text-only set address (no location pin, no
+    # geocoder in this app) can exist with no coordinates at all, rather
+    # than a placeholder value that would sit in the table looking like a
+    # real, meaningful center point. geo.match_safe_zone() skips these.
+    center_lat: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    center_lon: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    radius_m: Mapped[int | None] = mapped_column(Integer)
     kind: Mapped[str] = mapped_column(Text, nullable=False)
     trigger_message_en: Mapped[str | None] = mapped_column(Text)
     trigger_message_zh: Mapped[str | None] = mapped_column(Text)

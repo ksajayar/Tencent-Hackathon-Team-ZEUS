@@ -1,6 +1,7 @@
 import asyncio
 from datetime import UTC, datetime
 from email.utils import parseaddr
+from zoneinfo import ZoneInfo
 
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -146,12 +147,20 @@ async def sync_user_gmail(session: AsyncSession, token_row: OAuthToken) -> tuple
         row = EmailCache(user_id=token_row.user_id, gmail_message_id=message_id, **parsed)
         session.add(row)
         new_rows.append(row)
+        received_at = parsed["received_at"]
         classify_batch.append(
             {
                 "id": message_id,
                 "from": parsed["from_addr"],
                 "subject": parsed["subject"],
                 "snippet": parsed["snippet"],
+                # In the patient's timezone, so "next Tuesday" in a snippet
+                # resolves to the date they'd actually turn up on.
+                "received": (
+                    received_at.astimezone(ZoneInfo(user.timezone)).strftime("%a %d %b %Y %H:%M")
+                    if received_at
+                    else None
+                ),
             }
         )
 

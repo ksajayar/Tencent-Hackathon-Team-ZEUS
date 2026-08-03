@@ -44,8 +44,9 @@ class TwilioWhatsAppProvider:
         return message.sid
 
     async def send_template(self, to: str, template_sid: str, variables: dict[str, str]) -> str:
-        """§03 §3.4: the sandbox's fixed pre-approved templates, sent by
-        Content API SID (starts 'HX') rather than free-form Body."""
+        """§03 §3.4: an approved template, sent by Content API SID (starts
+        'HX') rather than free-form Body - required outside the 24h window
+        regardless of which number this account uses."""
         to_addr = to if to.startswith("whatsapp:") else f"whatsapp:{to}"
         message = await asyncio.to_thread(
             self._client.messages.create,
@@ -85,7 +86,7 @@ class TwilioWhatsAppProvider:
             logger.info("typing_indicator_sent", message_sid=message_sid)
 
     async def list_content_templates(self) -> list[dict]:
-        """Content API templates available on this account, so the sandbox's
+        """Content API templates available on this account, so the approved
         'Appointment reminder' ContentSid can be found via /internal/debug
         instead of hunting through the Twilio console."""
 

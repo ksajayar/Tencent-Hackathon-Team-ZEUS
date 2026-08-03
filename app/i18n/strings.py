@@ -19,7 +19,8 @@ OAUTH_DENIED = {
 }
 
 OAUTH_ERROR = {
-    "en": "Something went wrong connecting your Google account. Please try again by saying 'connect google'.",
+    "en": "Something went wrong connecting your Google account. Please try again by saying "
+    "'connect google'.",
     "zh-Hans": "连接谷歌账号时出了点问题，请再说一次「连接谷歌」试试。",
 }
 
@@ -38,6 +39,16 @@ MEDICATION_GUARD_FALLBACK = {
     "zh-Hans": "现在是吃药的时间。如果不确定，请联系您的照顾者。",
 }
 
+# §17 safety walkthrough, fix B: MEDICATION_GUARD_FALLBACK above tells the
+# recipient to "check with your caregiver" - circular and nonsensical when
+# the recipient IS the caregiver. Used anywhere a medication-related guard
+# fires on caregiver-facing text (_caregiver_qa, _caregiver_medication_query).
+MEDICATION_GUARD_FALLBACK_CAREGIVER = {
+    "en": "I can't confirm that safely right now. Please check {patient_name}'s "
+    "medication record directly, or confirm with the doctor.",
+    "zh-Hans": "我现在没办法安全确认这一点。请直接查看{patient_name}的用药记录，或向医生确认。",
+}
+
 MEDICATION_ACK_CONFIRMATION = {
     "en": "Good, thank you for letting me know.",
     "zh-Hans": "好的，谢谢您告诉我。",
@@ -46,6 +57,14 @@ MEDICATION_ACK_CONFIRMATION = {
 NO_MEDICATIONS = {
     "en": "I don't have any medicines on file for you yet. Please check with your caregiver.",
     "zh-Hans": "我这里还没有您的药物记录，请联系您的照顾者。",
+}
+
+# Same reasoning as MEDICATION_GUARD_FALLBACK_CAREGIVER above - the patient
+# version's "check with your caregiver" is circular for a caregiver asking
+# on their own behalf. Used by _caregiver_medication_query.
+NO_MEDICATIONS_CAREGIVER = {
+    "en": "There are no medicines on file for {patient_name} yet.",
+    "zh-Hans": "目前还没有{patient_name}的用药记录。",
 }
 
 AUDIO_TOO_LONG = {
@@ -165,19 +184,48 @@ CONTACT_UNREADABLE = {
     "zh-Hans": "我读不了这张联系人名片，可以再发一次吗？",
 }
 
+# §07 §7.11 two-step contact chain. Question 1 grants the smaller permission
+# (who to phone), question 2 the larger one (who may write to her records) -
+# see app/pipelines/text.py::_confirm_contact_question for why that order.
 CONTACT_SAVED_ASK_EMERGENCY = {
     "en": "I've saved {name} as a contact. Should I call them if there's an emergency?",
     "zh-Hans": "我已经把{name}保存为联系人。如果有紧急情况，需要我联系他们吗？",
 }
 
-CONTACT_EMERGENCY_YES = {
-    "en": "Good, I'll call {name} first if you ever need help.",
-    "zh-Hans": "好的，如果您需要帮助，我会先联系{name}。",
-}
-
 CONTACT_EMERGENCY_NO = {
     "en": "Okay, I won't call {name} in an emergency.",
     "zh-Hans": "好的，紧急情况下我不会联系{name}。",
+}
+
+CONTACT_ASK_CAREGIVER = {
+    "en": "Do you want {name} to be your caregiver as well?",
+    "zh-Hans": "您也想让{name}做您的照顾者吗？",
+}
+
+CONTACT_CAREGIVER_YES = {
+    "en": "Good. {name} is your caregiver now.",
+    "zh-Hans": "好的。{name}现在是您的照顾者。",
+}
+
+# A "no" here must not read as undoing question 1 - it says the first answer stands.
+CONTACT_CAREGIVER_NO = {
+    "en": "Okay. I'll still call {name} if there's an emergency.",
+    "zh-Hans": "好的。如果有紧急情况，我还是会联系{name}。",
+}
+
+# §17 role detection (app/pipelines/text.py::handle): sent once, the first
+# time a caregiver's own inbound message resolves to a pending link, in place
+# of answering that message - deterministic and not LLM-generated so the very
+# first thing a caregiver reads can't be an improvised, possibly-overpromising
+# introduction (the same reasoning as OAUTH_SUCCESS above). Command names are
+# safe to list now that pipelines/caregiver.py actually implements them.
+CAREGIVER_LINK_ACTIVATED = {
+    "en": "You've been added as {patient_name}'s caregiver. Ask me about "
+    "{patient_name}'s medicines, appointments, or recent emails. You can also send: "
+    "set appointment, set bloodwork, set address, set medication, or check candidates.",
+    "zh-Hans": "您已被添加为{patient_name}的照顾者。您可以向我询问{patient_name}的用药、"
+    "预约或近期邮件。您也可以发送：set appointment（设置预约）、set bloodwork（设置验血）、"
+    "set address（设置地址）、set medication（设置用药）、check candidates（查看待审核）。",
 }
 
 CHECKIN_PROMPT = {
@@ -188,4 +236,230 @@ CHECKIN_PROMPT = {
 CHECKIN_NO_RESPONSE_ALERT = {
     "en": "{patient_name} has not replied to a check-in message for 20 minutes.",
     "zh-Hans": "{patient_name}已经20分钟没有回复问候消息了。",
+}
+
+# --- M10: Caregiver commands (§17) ---
+
+# set appointment
+CAREGIVER_APPOINTMENT_ASK_DATETIME = {
+    "en": "When is {patient_name}'s appointment? Please give the date and time, "
+    "e.g. '5 August 2026, 2pm'.",
+    "zh-Hans": '{patient_name}的预约是什么时候？请提供日期和时间，例如"2026年8月5日下午2点"。',
+}
+
+CAREGIVER_APPOINTMENT_DATETIME_UNCLEAR = {
+    "en": "I couldn't understand that date and time. Please try again, e.g. '5 August 2026, 2pm'.",
+    "zh-Hans": '我没能理解这个日期和时间，请再试一次，例如"2026年8月5日下午2点"。',
+}
+
+CAREGIVER_APPOINTMENT_ASK_LOCATION = {
+    "en": "Where is the appointment?",
+    "zh-Hans": "预约地点在哪里？",
+}
+
+CAREGIVER_APPOINTMENT_ASK_PURPOSE = {
+    "en": "What is the appointment for?",
+    "zh-Hans": "这次预约是为了什么？",
+}
+
+CAREGIVER_APPOINTMENT_CONFIRM = {
+    "en": "New appointment for {patient_name}: {purpose}, {when}, at {location}. "
+    "Should I save this?",
+    "zh-Hans": "为{patient_name}新增预约：{purpose}，{when}，地点在{location}。要保存吗？",
+}
+
+CAREGIVER_APPOINTMENT_SAVED = {
+    "en": "Saved. {patient_name} has been told about the appointment.",
+    "zh-Hans": "已保存。已经通知{patient_name}这次预约了。",
+}
+
+CAREGIVER_APPOINTMENT_CANCELLED = {
+    "en": "Okay, I didn't save that. Send 'set appointment' to try again.",
+    "zh-Hans": '好的，没有保存。发送"set appointment"可以重新开始。',
+}
+
+# Sent to the patient when a caregiver-created appointment is saved -
+# {when} comes from calendar_service.render_when(), never a raw clock time
+# (persona voice rule, docs/16).
+PATIENT_NEW_APPOINTMENT = {
+    "en": "A new appointment has been added: {purpose}, {when}, at {location}.",
+    "zh-Hans": "已经新增一个预约：{purpose}，{when}，地点在{location}。",
+}
+
+# set bloodwork
+CAREGIVER_BLOODWORK_ASK_INTAKE = {
+    "en": "Please send {patient_name}'s bloodwork - you can type it, or send a photo "
+    "or PDF. Type 'done' when finished.",
+    "zh-Hans": "请发送{patient_name}的验血结果——可以直接打字，也可以发送照片或PDF文件。"
+    '完成后请输入"done"。',
+}
+
+CAREGIVER_BLOODWORK_TEXT_SAVED = {
+    "en": "Saved. Send more, or type 'done' when finished.",
+    "zh-Hans": '已保存。可以继续发送，完成后请输入"done"。',
+}
+
+CAREGIVER_BLOODWORK_MEDIA_SAVED = {
+    "en": "Saved that as bloodwork for {patient_name}. Send more, or type 'done' when finished.",
+    "zh-Hans": '已保存为{patient_name}的验血记录。可以继续发送，完成后请输入"done"。',
+}
+
+CAREGIVER_BLOODWORK_DONE = {
+    "en": "Thank you, I've saved {patient_name}'s bloodwork.",
+    "zh-Hans": "谢谢，{patient_name}的验血记录已经保存。",
+}
+
+# set address
+CAREGIVER_ADDRESS_ASK = {
+    "en": "What is {patient_name}'s home address?",
+    "zh-Hans": "{patient_name}的家庭地址是什么？",
+}
+
+CAREGIVER_ADDRESS_SAVED = {
+    "en": "Saved. {patient_name} can now ask me where home is.",
+    "zh-Hans": "已保存。{patient_name}现在可以问我家在哪里了。",
+}
+
+# set medication
+CAREGIVER_MEDICATION_ASK_NAME = {
+    "en": "What is the name of the medicine?",
+    "zh-Hans": "药物的名称是什么？",
+}
+
+CAREGIVER_MEDICATION_ASK_DOSE = {
+    "en": "What is the dose? For example, '1 tablet' or '5mg'.",
+    "zh-Hans": '剂量是多少？例如"1片"或"5毫克"。',
+}
+
+# Fixed menu, not free-text schedule parsing - a misread schedule drives
+# real reminder timing, the same class of risk as the undetectable dose-value
+# drift flagged in the SAFETY-1 clause 2 walkthrough. Options map directly to
+# known-good RRULE strings (app/pipelines/caregiver.py), no interpretation.
+CAREGIVER_MEDICATION_ASK_SCHEDULE = {
+    "en": "When should {patient_name} take it? Reply with a number:\n"
+    "1. Once a day, morning\n"
+    "2. Once a day, evening\n"
+    "3. Twice a day, morning and evening\n"
+    "4. Three times a day, with meals",
+    "zh-Hans": "{patient_name}应该什么时候吃？请回复数字：\n"
+    "1. 每天一次，早上\n"
+    "2. 每天一次，晚上\n"
+    "3. 每天两次，早晚各一次\n"
+    "4. 每天三次，三餐时",
+}
+
+CAREGIVER_MEDICATION_SCHEDULE_UNCLEAR = {
+    "en": "Please reply with just the number: 1, 2, 3, or 4.",
+    "zh-Hans": "请直接回复数字：1、2、3或4。",
+}
+
+CAREGIVER_MEDICATION_CONFIRM = {
+    "en": "{name}, {dose_text}, {schedule_label} - should I add this for {patient_name}?",
+    "zh-Hans": "{name}，{dose_text}，{schedule_label}——要为{patient_name}添加这条用药记录吗？",
+}
+
+CAREGIVER_MEDICATION_SAVED = {
+    "en": "Saved. {patient_name} will get reminders for {name}.",
+    "zh-Hans": "已保存。{patient_name}会收到{name}的用药提醒。",
+}
+
+CAREGIVER_MEDICATION_CANCELLED = {
+    "en": "Okay, I didn't save that. Send 'set medication' to try again.",
+    "zh-Hans": '好的，没有保存。发送"set medication"可以重新开始。',
+}
+
+# check candidates (§17 §1.2, closes CLAUDE.md SAFETY-1 clause 3)
+CAREGIVER_NO_PENDING_CANDIDATES = {
+    "en": "There is nothing waiting for review right now.",
+    "zh-Hans": "目前没有需要审核的内容。",
+}
+
+# {extracted} is the verbatim text_verbatim from the photo, or a plain
+# "no text could be read" note - never a guess at the drug name beyond what
+# was actually printed (CLAUDE.md SAFETY-1: OCR extraction only, no inference).
+CAREGIVER_CANDIDATE_REVIEW_PROMPT = {
+    "en": "From a photo, {days_ago} - here's what was on the label:\n\n{extracted}\n\n"
+    "Add this as a medication for {patient_name}? (yes/no)",
+    "zh-Hans": "来自{days_ago}的照片——标签上的内容是：\n\n{extracted}\n\n"
+    "要把这个添加为{patient_name}的用药记录吗？（是/否）",
+}
+
+CAREGIVER_CANDIDATE_REJECTED = {
+    "en": "Okay, skipped.",
+    "zh-Hans": "好的，已跳过。",
+}
+
+CAREGIVER_CANDIDATE_REVIEW_DONE = {
+    "en": "No more items to review.",
+    "zh-Hans": "没有更多需要审核的内容了。",
+}
+
+# Sent to the linked caregiver when image.py creates a new pending candidate -
+# previously nothing notified anyone (verified this session: the patient was
+# told "saved for your caregiver to check" but the caregiver was never
+# actually messaged). Free-form text, so only sends if the caregiver's own
+# 24h window with this number is open; if not, it queues like any other
+# outbound.send_text (app/channels/outbound.py) and is delivered once they
+# next message in.
+CAREGIVER_CANDIDATE_NOTIFY = {
+    "en": "{patient_name} sent a photo of a medicine label. Send 'check candidates' to review it.",
+    "zh-Hans": '{patient_name}发送了一张药品标签的照片。发送"check candidates"可以查看。',
+}
+
+# Patient-side reads (§17 §7)
+NO_BLOODWORK = {
+    "en": "I don't have your bloodwork on file. I can ask your caregiver.",
+    "zh-Hans": "我这里没有您的验血记录，我可以帮您问问照顾者。",
+}
+
+NO_HOME_ADDRESS = {
+    "en": "I don't have your home address on file. I can ask your caregiver.",
+    "zh-Hans": "我这里没有您的家庭地址，我可以帮您问问照顾者。",
+}
+
+# {summary} is whichever of summary_en/zh/extracted_text the document
+# actually has (app/pipelines/text.py::_bloodwork_query) - rendered
+# verbatim, never re-summarised by a model (see get_latest_bloodwork's
+# docstring for why this stays out of the general free-text QA path).
+BLOODWORK_RESULT = {
+    "en": "Here is your latest bloodwork: {summary}",
+    "zh-Hans": "这是您最新的验血结果：{summary}",
+}
+
+BLOODWORK_RESULT_CAREGIVER = {
+    "en": "{patient_name}'s latest bloodwork: {summary}",
+    "zh-Hans": "{patient_name}最新的验血结果：{summary}",
+}
+
+NO_BLOODWORK_CAREGIVER = {
+    "en": "There is no bloodwork on file for {patient_name}.",
+    "zh-Hans": "目前没有{patient_name}的验血记录。",
+}
+
+BLOOD_TYPE_RESULT = {
+    "en": "Your blood type is {blood_type}.",
+    "zh-Hans": "您的血型是{blood_type}型。",
+}
+
+BLOOD_TYPE_RESULT_CAREGIVER = {
+    "en": "{patient_name}'s blood type is {blood_type}.",
+    "zh-Hans": "{patient_name}的血型是{blood_type}型。",
+}
+
+# Persona rule (docs/16): answers about "where am I" / "what's happening"
+# end with a small reassurance - the caregiver version doesn't, per the
+# caregiver persona's own "no reassurance, no softening" rule.
+HOME_ADDRESS_RESULT = {
+    "en": "Your home is at {address}. You are safe.",
+    "zh-Hans": "您的家在{address}。您很安全。",
+}
+
+HOME_ADDRESS_RESULT_CAREGIVER = {
+    "en": "{patient_name}'s home address is {address}.",
+    "zh-Hans": "{patient_name}的家庭地址是{address}。",
+}
+
+NO_HOME_ADDRESS_CAREGIVER = {
+    "en": "There is no home address on file for {patient_name}.",
+    "zh-Hans": "目前没有{patient_name}的家庭地址记录。",
 }

@@ -8,11 +8,16 @@ class Settings(BaseSettings):
     # Channel
     twilio_account_sid: str
     twilio_auth_token: str
-    twilio_whatsapp_from: str = "whatsapp:+14155238886"
-    # Content API SID (starts 'HX') for the sandbox's fixed "appointment
-    # reminder" template - §03 §3.4. Optional so a missing value degrades
-    # (out-of-window reminders log and skip) rather than crashing the app;
-    # look it up via GET /internal/debug/templates.
+    # Own Twilio number, connected to a Meta Business Account - no longer the
+    # shared sandbox (+14155238886). No join code, no 3-day join expiry, and
+    # custom templates can be created instead of the sandbox's fixed three -
+    # but the 24h free-form-message window is Meta's rule, not the sandbox's,
+    # and still applies here.
+    twilio_whatsapp_from: str = "whatsapp:+13158126378"
+    # Content API SID (starts 'HX') for the approved "appointment reminder"
+    # template - §03 §3.4. Optional so a missing value degrades (out-of-window
+    # reminders log and skip) rather than crashing the app; look it up via
+    # GET /internal/debug/templates.
     twilio_appointment_template_sid: str | None = None
     # Seeds one is_emergency=true contact for the demo (§09 seed step) so the
     # SOS "Done when" check has a real second phone to alert without a vCard

@@ -14,14 +14,19 @@ from app.db.models.media import MediaFile
 from app.db.models.user import User
 from app.db.session import async_session
 from app.i18n.strings import (
+    CAREGIVER_BLOODWORK_MEDIA_SAVED,
+    CAREGIVER_CANDIDATE_NOTIFY,
     IMAGE_UNREADABLE,
     PILL_BOTTLE_SAVED_GENERIC,
     PILL_BOTTLE_SAVED_NAMED,
     PRESCRIPTION_SAVED,
     VISION_DEGRADED,
 )
+from app.pipelines import caregiver as caregiver_pipeline
+from app.services import conversation as conversation_service
 from app.services import documents as documents_service
 from app.services import medication_candidates as candidates_service
+from app.services.contacts import find_caregiver_user
 from app.vision import image as image_preprocessing
 
 logger = get_logger(__name__)
@@ -62,6 +67,20 @@ async def handle(
             logger.warning("image_pipeline_user_missing", user_id=str(user_id))
             return
         reply_language = user.preferred_language
+
+        # §17 set bloodwork: a caregiver mid-intake photographing a lab
+        # report must never reach _route_by_kind - the vision prompt's own
+        # "prescription" definition includes lab reports, so that path would
+        # classify this as a prescription and save it to
+        # medication_candidates instead of documents (found this session
+        # auditing SAFETY-1 clause 3). Resolved once, up front, since the
+        # download/preprocess/vision-call steps below are identical either
+        # way - only what happens with the classification result differs.
+        bloodwork_patient = None
+        if user.role == "caregiver":
+            bloodwork_patient = await caregiver_pipeline.get_pending_bloodwork_patient(
+                session, user
+            )
 
         try:
             content = await media_channel.download_media(media.remote_url)
@@ -121,9 +140,64 @@ async def handle(
             await session.commit()
             return
 
+        if bloodwork_patient is not None:
+            # Bypasses _route_by_kind entirely (see the comment above) -
+            # `result["kind"]` is deliberately ignored here, only the OCR'd
+            # text_verbatim is used. No AI summary is generated (same
+            # decision as the text-intake case in pipelines/caregiver.py),
+            # so there is no summary that could ever restate a medication
+            # name or dose (SAFETY-1).
+            await documents_service.create_document(
+                session,
+                media_id=media_file.id,
+                doc_kind="blood_work",
+                extracted_text=result.get("text_verbatim") or None,
+                summary_en=None,
+                summary_zh=None,
+                was_scanned=False,
+                patient_id=bloodwork_patient.id,
+            )
+            template = _pick(CAREGIVER_BLOODWORK_MEDIA_SAVED, reply_language)
+            reply = template.format(patient_name=bloodwork_patient.display_name or "the patient")
+            await outbound.send_text(
+                session,
+                user,
+                conversation_id,
+                reply,
+                meta=caregiver_pipeline.bloodwork_intake_meta(),
+            )
+            await session.commit()
+            return
+
         reply = await _route_by_kind(session, user, media_file.id, result, reply_language)
         await outbound.send_text(session, user, conversation_id, reply)
+
+        if result.get("kind") in ("pill_bottle", "prescription"):
+            await _notify_caregiver_of_candidate(session, user)
+
         await session.commit()
+
+
+async def _notify_caregiver_of_candidate(session: AsyncSession, patient: User) -> None:
+    """CLAUDE.md SAFETY-1 clause 3: previously nothing notified anyone when
+    a new medication_candidate was created - verified this session that the
+    patient was told "saved for your caregiver to check" while the
+    caregiver was never actually messaged. Best-effort: a failed lookup or
+    send here must not affect the patient's own reply, already sent above,
+    so exceptions are logged and swallowed rather than propagated."""
+    try:
+        caregiver = await find_caregiver_user(session, patient.id)
+        if caregiver is None:
+            return
+        conversation = await conversation_service.get_or_create_open_conversation(
+            session, caregiver
+        )
+        body = _pick(CAREGIVER_CANDIDATE_NOTIFY, caregiver.preferred_language).format(
+            patient_name=patient.display_name or "the patient"
+        )
+        await outbound.send_text(session, caregiver, conversation.id, body)
+    except Exception:
+        logger.exception("caregiver_candidate_notify_failed", patient_id=str(patient.id))
 
 
 async def _route_by_kind(

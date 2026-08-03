@@ -11,7 +11,9 @@ from app.db.base import Base
 class User(Base):
     __tablename__ = "users"
     __table_args__ = (
-        CheckConstraint("preferred_language IN ('en', 'zh-Hans')", name="ck_users_preferred_language"),
+        CheckConstraint(
+            "preferred_language IN ('en', 'zh-Hans')", name="ck_users_preferred_language"
+        ),
         CheckConstraint("role IN ('patient', 'caregiver')", name="ck_users_role"),
         Index("idx_users_last_inbound", "last_inbound_at"),
     )

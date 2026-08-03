@@ -30,8 +30,8 @@ platforms chosen, and most of the architecture exists to work around them.
 
 | # | Constraint | Consequence |
 |---|---|---|
-| 1 | Twilio's WhatsApp **sandbox cannot use custom templates** — only three fixed pre-approved ones — and outside the 24-hour window a template is the *only* thing you may send | Proactive medication reminders are not free-form. Everything routes through a window-aware outbound gateway. See `docs/03-whatsapp-twilio.md`. |
-| 2 | The sandbox **join expires 3 days after joining** | If your judge joins on Monday and demos on Friday, the bot is silently dead. Pre-demo checklist in `docs/13-roadmap.md`. |
+| 1 | Outside a **24-hour window** opened by the user's last inbound message, a template is the *only* thing you may send — Meta's platform rule, unaffected by moving off the Twilio sandbox onto a real number | Proactive medication reminders are not free-form. Everything routes through a window-aware outbound gateway. See `docs/03-whatsapp-twilio.md`. |
+| 2 | **Single Railway replica**, in-process scheduler and worker | Cannot horizontal-scale without moving the scheduler out of process first. See `docs/16-persona-limitations-guardrails.md` §2.1. |
 | 3 | WhatsApp gives you a **static location pin on request**, not a live GPS stream | Continuous geofencing is not buildable. Replaced with a pull-based location check. See `docs/07-features.md`. |
 
 ---

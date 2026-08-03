@@ -12,12 +12,14 @@ from app.db.models.media import MediaFile
 from app.db.models.user import User
 from app.db.session import async_session
 from app.i18n.strings import (
+    CAREGIVER_BLOODWORK_MEDIA_SAVED,
     DOCUMENT_DEGRADED_EMPTY,
     DOCUMENT_DEGRADED_PREFIX,
     DOCUMENT_OFFER_VOICE,
     DOCUMENT_TOO_LONG,
     DOCUMENT_UNREADABLE,
 )
+from app.pipelines import caregiver as caregiver_pipeline
 from app.services import documents as documents_service
 from app.vision import pdf as pdf_processing
 
@@ -41,6 +43,17 @@ async def handle(
             logger.warning("document_pipeline_user_missing", user_id=str(user_id))
             return
         reply_language = user.preferred_language
+
+        # §17 set bloodwork: unlike image.py, a PDF never gets misrouted to
+        # medication_candidates (that vision-only bug doesn't exist here -
+        # every PDF already lands in `documents` regardless of doc_kind).
+        # This just needs to redirect doc_kind/patient_id to the caregiver's
+        # linked patient and keep the intake flow open, once resolved here.
+        bloodwork_patient = None
+        if user.role == "caregiver":
+            bloodwork_patient = await caregiver_pipeline.get_pending_bloodwork_patient(
+                session, user
+            )
 
         try:
             content = await media_channel.download_media(media.remote_url)
@@ -108,20 +121,37 @@ async def handle(
         )
 
         if result is None:
-            reply = await _degraded_reply(content, probe, media_file.id, session, reply_language)
-            await outbound.send_text(session, user, conversation_id, reply)
+            reply = await _degraded_reply(
+                content, probe, media_file.id, session, reply_language, patient=bloodwork_patient
+            )
+            meta = caregiver_pipeline.bloodwork_intake_meta() if bloodwork_patient else None
+            await outbound.send_text(session, user, conversation_id, reply, meta=meta)
             await session.commit()
             return
 
         await documents_service.create_document(
             session,
             media_id=media_file.id,
-            doc_kind=result["doc_kind"],
+            doc_kind="blood_work" if bloodwork_patient else result["doc_kind"],
             extracted_text=result["extracted_text"] or None,
             summary_en=result["summary_en"] or None,
             summary_zh=result["summary_zh"] or None,
             was_scanned=probe["was_scanned"],
+            patient_id=bloodwork_patient.id if bloodwork_patient else None,
         )
+
+        if bloodwork_patient is not None:
+            template = _pick(CAREGIVER_BLOODWORK_MEDIA_SAVED, reply_language)
+            reply = template.format(patient_name=bloodwork_patient.display_name or "the patient")
+            await outbound.send_text(
+                session,
+                user,
+                conversation_id,
+                reply,
+                meta=caregiver_pipeline.bloodwork_intake_meta(),
+            )
+            await session.commit()
+            return
 
         summary = _pick(
             {"en": result["summary_en"], "zh-Hans": result["summary_zh"]}, reply_language
@@ -139,19 +169,33 @@ async def _degraded_reply(
     media_file_id: uuid.UUID,
     session: AsyncSession,
     reply_language: str,
+    *,
+    patient: User | None = None,
 ) -> str:
     """§05 §5.4 degraded mode: extract the first paragraph with pypdf and
-    return it unsummarised, rather than nothing."""
+    return it unsummarised, rather than nothing. `patient` set (§17): a
+    caregiver's bloodwork PDF that hits this path still needs to redirect
+    doc_kind/patient_id, same as the non-degraded branch above - a
+    caregiver's document should never end up filed as an ordinary
+    "other"-kind, ownerless row just because summarisation failed."""
     paragraph = await pdf_processing.extract_first_paragraph(content)
     await documents_service.create_document(
         session,
         media_id=media_file_id,
-        doc_kind="other",
+        doc_kind="blood_work" if patient else "other",
         extracted_text=paragraph or None,
         summary_en=None,
         summary_zh=None,
         was_scanned=probe["was_scanned"],
+        patient_id=patient.id if patient else None,
     )
+    if patient is not None:
+        # Caregiver-voiced, not the patient-voiced strings below - this is
+        # a caregiver uploading on someone else's behalf, even in the
+        # degraded case.
+        return _pick(CAREGIVER_BLOODWORK_MEDIA_SAVED, reply_language).format(
+            patient_name=patient.display_name or "the patient"
+        )
     if not paragraph:
         return _pick(DOCUMENT_DEGRADED_EMPTY, reply_language)
     return _pick(DOCUMENT_DEGRADED_PREFIX, reply_language) + paragraph

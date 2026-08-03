@@ -103,10 +103,9 @@ workers. The webhook receiver itself stays tiny and stateless and scales trivial
 
 | Risk | Severity | Mitigation |
 |---|---|---|
-| **Twilio sandbox join expires after 3 days** | **High — silent** | Re-join on demo morning. On the checklist. |
-| **No custom templates on the sandbox** | High | Keep the 24-hour window open; workaround in §03. |
-| Sandbox shows Twilio branding, shared number | Low | Cosmetic. Acknowledge in the pitch. |
-| 1 message / 3 seconds | Medium | Throttle in the outbound gateway. |
+| **24-hour free-form window** (Meta's platform rule, not a sandbox one - still applies on the current number) | High | Keep the window open where possible; approved templates cover the rest. §03. |
+| **Template approval takes real review time and can be rejected** | Medium | Submit well before a demo, not the morning of. Check `/internal/debug/templates`. |
+| 1 message / 3 seconds | Medium | Self-imposed in the outbound gateway. |
 | **Meta charges for in-window messages from Oct 2026** | Medium (future) | Affects the business case, not the demo. |
 | **Railway has no permanent free tier** | Medium | $5 trial or $5/month. Check the balance before demoing. |
 | Railway redeploy restarts the scheduler | Medium | `misfire_grace_time`, `coalesce`, boot recovery pass. Freeze deploys before the demo. |

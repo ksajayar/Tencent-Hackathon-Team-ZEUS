@@ -75,26 +75,28 @@ Cost key: **FREE** = free and unmetered · **FREE TIER** = free within a quota �
 
 ## Messaging channel
 
-### Twilio WhatsApp Sandbox
+### Twilio WhatsApp (Meta Business Account)
 - **Purpose:** the entire user interface.
-- **Why:** you chose it. Correctly, for a hackathon — no Meta Business verification, no display
-  name review, working in about ten minutes.
-- **Cost:** FREE TIER. Trial credit covers demo volume; messages are billed against it at
+- **Why:** started on the Twilio sandbox for speed (no Meta Business verification, no display
+  name review, working in about ten minutes), then moved to a purchased Twilio number connected
+  to a Meta Business Account once that verification was done - keeping Twilio's API rather than
+  building directly against Meta's Cloud API.
+- **Cost:** own-number billing (no more free sandbox trial credit); messages are billed at
   standard WhatsApp rates.
-- **Alternatives:** Meta Cloud API test number (no Twilio markup, no 3-day expiry, **custom
-  templates work** — but needs a Meta app and Business portfolio setup).
 - **Limits — read all of these:**
 
   | Limit | Impact |
   |---|---|
-  | **No custom templates.** Only three fixed pre-approved ones. | You cannot write your own medication-reminder template. Workaround in §03. |
-  | **Join expires 3 days after joining.** | Demo-day killer. Re-join the morning of. |
-  | **Free-form only inside the 24h window** opened by the user's last inbound message. | The outbound gateway must check the window before every send. |
-  | **1 message / 3 seconds.** | Outbound queue needs a throttle. |
+  | **Free-form only inside the 24h window** opened by the user's last inbound message. | This is Meta's platform rule, not a sandbox one - it applies here exactly as it did before. The outbound gateway must check the window before every send. |
+  | Custom templates require Meta's review before they're usable. | Not instant, and can be rejected on wording/variable-placement grounds. Submit well before a demo. |
+  | **1 message / 3 seconds.** | Self-imposed in the outbound gateway, not enforced by Twilio here - kept anyway. |
   | Media messages **cannot carry a text caption** — `Body` is silently dropped. | Text and audio are always two separate sends. |
   | One media object per free-form message. | No batching. |
-  | Shared sandbox number, shows Twilio branding. | Cosmetic; mention it in the pitch, don't hide it. |
   | Audio: 16 MB. Images: 5 MB. Filenames ≤20 ASCII chars. | Validate before send or get an opaque 400. |
+
+  No more join code, no 3-day join expiry, no shared-number branding, and custom templates are
+  submittable - all four were fixed limitations of the sandbox this project started on. §03
+  covers the templates now actually in use.
 
 ---
 

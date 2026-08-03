@@ -24,11 +24,12 @@ router = APIRouter()
 logger = get_logger(__name__)
 
 _EXPIRED_HTML = (
-    "<h1>That link expired</h1>"
-    "<p>Please say 'connect google' on WhatsApp again for a new link.</p>"
+    "<h1>That link expired</h1><p>Please say 'connect google' on WhatsApp again for a new link.</p>"
 )
 _DENIED_HTML = "<h1>No problem</h1><p>You can connect your Google account later.</p>"
-_SUCCESS_HTML = "<h1>Google account connected</h1><p>You can close this page and return to WhatsApp.</p>"
+_SUCCESS_HTML = (
+    "<h1>Google account connected</h1><p>You can close this page and return to WhatsApp.</p>"
+)
 _ERROR_HTML = "<h1>Something went wrong</h1><p>Please return to WhatsApp and try again.</p>"
 
 
@@ -69,7 +70,12 @@ async def oauth_callback(
 
     result = await session.execute(select(OAuthState).where(OAuthState.state == state))
     state_row = result.scalar_one_or_none()
-    if state_row is None or state_row.used_at is not None or state_row.expires_at < datetime.now(UTC):
+    expired = (
+        state_row is None
+        or state_row.used_at is not None
+        or state_row.expires_at < datetime.now(UTC)
+    )
+    if expired:
         return HTMLResponse(_EXPIRED_HTML, status_code=400)
 
     # Single-use: mark immediately, before any further processing.

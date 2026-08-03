@@ -100,7 +100,7 @@ async def debug_close_window(user_id: uuid.UUID, session: AsyncSession = Depends
 
 @router.get("/debug/templates", dependencies=[Depends(require_admin_token)])
 async def debug_templates() -> dict:
-    """Twilio Content API templates on this account, so the sandbox's
+    """Twilio Content API templates on this account, so the approved
     'Appointment reminder' ContentSid can be found without console-hunting.
     Also echoes the currently *running* configured_sid - not a secret (it's
     just a Content template id, already visible in your own Twilio console)

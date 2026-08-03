@@ -72,9 +72,24 @@ def _location_sentence(ping: LocationPing | None, language: str) -> str:
     return f" Last known location: {place}."
 
 
+# `relationship` is stored as an English key (contacts confirmed as the
+# caregiver, and seed.py, both write "caregiver"), so the Chinese branch below
+# would otherwise splice an English word into a Chinese sentence - "您的
+# caregiver美玲". Falls through to the raw value for anything unmapped, which
+# is no worse than before.
+_RELATIONSHIP_ZH = {
+    "caregiver": "照顾者",
+    "daughter": "女儿",
+    "son": "儿子",
+    "wife": "太太",
+    "husband": "先生",
+}
+
+
 def _contact_display(contact, language: str) -> str:
     if contact.relationship and language == "zh-Hans":
-        return f"您的{contact.relationship}{contact.display_name}"
+        relationship = _RELATIONSHIP_ZH.get(contact.relationship, contact.relationship)
+        return f"您的{relationship}{contact.display_name}"
     if contact.relationship:
         return f"your {contact.relationship}, {contact.display_name}"
     return contact.display_name

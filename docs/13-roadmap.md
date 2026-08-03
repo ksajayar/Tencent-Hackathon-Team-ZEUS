@@ -16,11 +16,11 @@ on Railway, Alembic initialised, `/health` responding on the public Railway URL.
 
 ## M1 — WhatsApp round trip
 
-Twilio sandbox configured. `POST /webhooks/twilio` with signature validation. `users`,
+Twilio WhatsApp channel configured. `POST /webhooks/twilio` with signature validation. `users`,
 `conversations`, `messages` tables. Inbound normalizer for text. Outbound gateway with the
 window check and throttle. Echo bot.
 
-**Done when:** you message the sandbox from your phone and get a reply, and the message is in
+**Done when:** you message the Twilio number from your phone and get a reply, and the message is in
 Postgres. Validate the signature works **on Railway**, not just locally — the proxy scheme
 issue in §10 will bite here or nowhere.
 
@@ -123,7 +123,6 @@ Priority tests from §11. Two full rehearsals of the §11.7 script on the deploy
 
 Copy this into your notes:
 
-- [ ] Everyone re-sent `join <code>` **today** — the sandbox join expires after 3 days
 - [ ] `GET /health/deps` all green
 - [ ] TTS smoke test returns a playable voice note
 - [ ] Google token valid (unverified apps in Testing expire refresh tokens after 7 days)

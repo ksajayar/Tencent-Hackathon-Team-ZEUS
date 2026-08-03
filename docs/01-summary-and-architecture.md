@@ -44,7 +44,7 @@ graph TB
     end
 
     subgraph Twilio
-        SB[WhatsApp Sandbox<br/>shared number]
+        SB[WhatsApp<br/>Meta Business number]
     end
 
     subgraph Railway
@@ -96,7 +96,7 @@ graph TB
 ## 2.3 Request lifecycle — inbound text
 
 ```
-1.  Patient sends "我今天要做什么?" to the sandbox number
+1.  Patient sends "我今天要做什么?" to the Twilio number
 2.  Twilio POSTs application/x-www-form-urlencoded to /webhooks/twilio
 3.  validate_twilio_signature(X-Twilio-Signature, url, params)   → reject 403 if bad
 4.  upsert user by WaId; open or reuse conversation

@@ -97,9 +97,9 @@ async def send_reminder(
     template_what: str,
 ) -> Message | None:
     """For scheduler-fired reminders only (§03 §3.4). Inside the window: the
-    fully-worded free-form message. Outside it: the sandbox's one fixed
-    'appointment reminder' template ({{1}}=when, {{2}}=what) - a reminder is
-    never silently dropped for being outside the window, unlike a plain reply.
+    fully-worded free-form message. Outside it: the approved 'appointment
+    reminder' template ({{1}}=when, {{2}}=what) - a reminder is never silently
+    dropped for being outside the window, unlike a plain reply.
 
     On template-send failure this is logged, not queued for retry: the next
     day's RRULE-advanced occurrence is the natural retry for a recurring
