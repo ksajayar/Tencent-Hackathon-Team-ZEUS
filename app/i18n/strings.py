@@ -164,6 +164,28 @@ DOCUMENT_OFFER_VOICE = {
     "zh-Hans": " 需要我读给您听吗？",
 }
 
+# Deterministic, appended in code whenever doc_kind is prescription/lab_report/
+# discharge_note (document.py) - never left to the model to remember. The
+# Gemini prompt (_DOCUMENT_PROMPT) only gives "please check with your
+# caregiver" as an EXAMPLE of tone, not a guaranteed instruction, so a
+# genuine prescription PDF could otherwise reach the patient with no
+# caregiver-check line at all if the model's summary happened to omit it -
+# same SAFETY-1 discipline as image.py's PILL_BOTTLE_SAVED_*/
+# PRESCRIPTION_SAVED, which already hardcode this rather than trust the model.
+DOCUMENT_CHECK_WITH_CAREGIVER = {
+    "en": " Please check this with your caregiver before acting on it.",
+    "zh-Hans": " 请在采取任何行动前，先和您的照顾者确认这份文件。",
+}
+
+# Same reasoning, for the degraded-mode fallback (pypdf's raw first
+# paragraph, no Gemini classification available) - doc_kind is unknown here,
+# so this is unconditional rather than gated on kind. Slightly more
+# cautious wording since the content genuinely hasn't been reviewed at all.
+DOCUMENT_DEGRADED_CHECK_WITH_CAREGIVER = {
+    "en": " This hasn't been reviewed yet - please check it with your caregiver.",
+    "zh-Hans": " 这份文件我还没能查看内容，请您先和照顾者确认一下。",
+}
+
 # --- M9: Location, SOS & contacts ---
 
 SOS_ALERT_TO_CONTACT = {

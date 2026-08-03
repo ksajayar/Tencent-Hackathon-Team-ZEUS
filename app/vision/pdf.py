@@ -1,7 +1,23 @@
 import asyncio
 import io
+import re
 
 import pypdf
+
+# Collapses pypdf's raw extract_text() output into one readable block.
+# pypdf wraps at the PDF's physical line boundaries, not sentence or word
+# boundaries, so a single sentence routinely comes back split mid-word
+# across several lines with irregular spacing - shown verbatim to a
+# dementia patient (this is the degraded-mode fallback, sent unsummarised),
+# that reads as broken text rather than a readable sentence. Purely
+# mechanical whitespace reflow, never touches which characters are present
+# (SAFETY-1: this stays a verbatim transcript, never rephrased).
+_WHITESPACE_RUN_RE = re.compile(r"\s+")
+
+
+def _normalize_extracted_text(text: str) -> str:
+    return _WHITESPACE_RUN_RE.sub(" ", text).strip()
+
 
 # §03 §3.3 / §05 §5.4: Twilio's own cap and the page-count cap.
 MAX_PDF_PAGES = 30
@@ -28,7 +44,7 @@ def _extract_first_paragraph_sync(content: bytes) -> str:
     reader = pypdf.PdfReader(io.BytesIO(content))
     text = (reader.pages[0].extract_text() or "") if reader.pages else ""
     paragraph = text.strip().split("\n\n")[0].strip()
-    return paragraph[:500]
+    return _normalize_extracted_text(paragraph)[:500]
 
 
 async def extract_first_paragraph(content: bytes) -> str:

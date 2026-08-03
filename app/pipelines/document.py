@@ -13,6 +13,8 @@ from app.db.models.user import User
 from app.db.session import async_session
 from app.i18n.strings import (
     CAREGIVER_BLOODWORK_MEDIA_SAVED,
+    DOCUMENT_CHECK_WITH_CAREGIVER,
+    DOCUMENT_DEGRADED_CHECK_WITH_CAREGIVER,
     DOCUMENT_DEGRADED_EMPTY,
     DOCUMENT_DEGRADED_PREFIX,
     DOCUMENT_OFFER_VOICE,
@@ -24,6 +26,13 @@ from app.services import documents as documents_service
 from app.vision import pdf as pdf_processing
 
 logger = get_logger(__name__)
+
+# doc_kind values (per _DOCUMENT_PROMPT in gemini_client.py) that can carry
+# medication or health-result content the patient must not act on alone -
+# discharge_note included since a hospital discharge routinely introduces or
+# changes medications. appointment_letter/other excluded: no medical
+# instruction content expected there.
+_MEDICATION_RELEVANT_DOC_KINDS = frozenset({"prescription", "lab_report", "discharge_note"})
 
 
 def _pick(bilingual: dict, language: str) -> str:
@@ -156,9 +165,14 @@ async def handle(
         summary = _pick(
             {"en": result["summary_en"], "zh-Hans": result["summary_zh"]}, reply_language
         )
-        reply = (summary or _pick(DOCUMENT_DEGRADED_EMPTY, reply_language)) + _pick(
-            DOCUMENT_OFFER_VOICE, reply_language
-        )
+        reply = summary or _pick(DOCUMENT_DEGRADED_EMPTY, reply_language)
+        if result["doc_kind"] in _MEDICATION_RELEVANT_DOC_KINDS:
+            # Deterministic, not left to the model: _DOCUMENT_PROMPT only
+            # offers "please check with your caregiver" as an example of
+            # tone, so a genuine prescription summary could otherwise omit
+            # it entirely if the model's wording happened not to include it.
+            reply += _pick(DOCUMENT_CHECK_WITH_CAREGIVER, reply_language)
+        reply += _pick(DOCUMENT_OFFER_VOICE, reply_language)
         await outbound.send_text(session, user, conversation_id, reply)
         await session.commit()
 
@@ -198,4 +212,12 @@ async def _degraded_reply(
         )
     if not paragraph:
         return _pick(DOCUMENT_DEGRADED_EMPTY, reply_language)
-    return _pick(DOCUMENT_DEGRADED_PREFIX, reply_language) + paragraph
+    # doc_kind is never known here - there was no Gemini call to classify
+    # it, only pypdf's raw text - so this is unconditional rather than
+    # gated on kind, same reasoning as the classified branch above but more
+    # cautious: nothing about this document has been reviewed at all.
+    return (
+        _pick(DOCUMENT_DEGRADED_PREFIX, reply_language)
+        + paragraph
+        + _pick(DOCUMENT_DEGRADED_CHECK_WITH_CAREGIVER, reply_language)
+    )
