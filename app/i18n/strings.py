@@ -375,26 +375,23 @@ CAREGIVER_MEDICATION_ASK_DOSE = {
     "zh-Hans": '剂量是多少？例如"1片"或"5毫克"。',
 }
 
-# Fixed menu, not free-text schedule parsing - a misread schedule drives
-# real reminder timing, the same class of risk as the undetectable dose-value
-# drift flagged in the SAFETY-1 clause 2 walkthrough. Options map directly to
-# known-good RRULE strings (app/pipelines/caregiver.py), no interpretation.
+# Free text, parsed by gemini_client.parse_medication_schedule() - not a
+# fixed menu. Safe because nothing is written from the parse alone: the
+# parsed schedule is echoed back in plain language at the confirm step
+# (CAREGIVER_MEDICATION_CONFIRM) and only written on an explicit yes, same
+# discipline as name and dose above. See the module comment on
+# parse_medication_schedule for the full reasoning.
 CAREGIVER_MEDICATION_ASK_SCHEDULE = {
-    "en": "When should {patient_name} take it? Reply with a number:\n"
-    "1. Once a day, morning\n"
-    "2. Once a day, evening\n"
-    "3. Twice a day, morning and evening\n"
-    "4. Three times a day, with meals",
-    "zh-Hans": "{patient_name}应该什么时候吃？请回复数字：\n"
-    "1. 每天一次，早上\n"
-    "2. 每天一次，晚上\n"
-    "3. 每天两次，早晚各一次\n"
-    "4. 每天三次，三餐时",
+    "en": "When should {patient_name} take it? For example, 'once a day in the morning', "
+    "'twice a day, before meals', or 'three times a day with food'.",
+    "zh-Hans": "{patient_name}应该什么时候吃？例如"
+    '"每天早上一次"、"每天两次，饭前"或"每天三次，随餐服用"。',
 }
 
 CAREGIVER_MEDICATION_SCHEDULE_UNCLEAR = {
-    "en": "Please reply with just the number: 1, 2, 3, or 4.",
-    "zh-Hans": "请直接回复数字：1、2、3或4。",
+    "en": "I didn't quite understand that. Could you describe it differently? For example, "
+    "'once a day in the morning' or 'twice a day, before meals'.",
+    "zh-Hans": "我没太明白。可以换个说法吗？例如" '"每天早上一次"或"每天两次，饭前"。',
 }
 
 CAREGIVER_MEDICATION_CONFIRM = {

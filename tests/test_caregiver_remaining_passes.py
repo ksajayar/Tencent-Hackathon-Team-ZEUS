@@ -261,6 +261,9 @@ async def test_contact_card_through_to_caregiver_activation(demo_pair, monkeypat
 
 
 async def test_check_candidates_yes_promotes_to_medication(demo_pair):
+    # Schedule step uses the autouse stub_medication_schedule_parse fixture's
+    # default result ("once a day, in the morning") - no override needed,
+    # the free text below just needs to be plausible for a human reading it.
     ids = demo_pair
     await _link_caregiver(ids)
     await _activate_caregiver(ids)
@@ -310,10 +313,9 @@ async def test_check_candidates_yes_promotes_to_medication(demo_pair):
     ask_dose = await _caregiver_says(ids, "yes")
     assert ask_dose
 
-    ask_schedule = await _caregiver_says(ids, "5mg")
-    assert "1" in ask_schedule and "2" in ask_schedule
-
-    confirm = await _caregiver_says(ids, "1")
+    ask_confirm = await _caregiver_says(ids, "5mg")
+    confirm = await _caregiver_says(ids, "once a day in the morning")
+    assert confirm != ask_confirm
     assert "Donepezil" in confirm
 
     async with async_session() as session:
@@ -463,7 +465,14 @@ async def test_set_appointment_in_chinese(demo_pair):
         assert events[0].location == "中央医院"
 
 
-async def test_set_medication_in_chinese(demo_pair):
+async def test_set_medication_in_chinese(demo_pair, stub_medication_schedule_parse):
+    stub_medication_schedule_parse(
+        {
+            "rrule": "FREQ=DAILY;BYHOUR=8,20;BYMINUTE=0",
+            "label_en": "twice a day, morning and evening",
+            "label_zh": "每天两次，早晚各一次",
+        }
+    )
     ids = demo_pair
     await _link_caregiver(ids)
     await _activate_caregiver(ids)
@@ -471,7 +480,7 @@ async def test_set_medication_in_chinese(demo_pair):
     await _caregiver_says(ids, "设置用药")
     await _caregiver_says(ids, "美金刚")
     await _caregiver_says(ids, "一片")
-    confirm = await _caregiver_says(ids, "3")
+    confirm = await _caregiver_says(ids, "每天两次，早晚各一次")
     assert "美金刚" in confirm
 
     saved = await _caregiver_says(ids, "是的")

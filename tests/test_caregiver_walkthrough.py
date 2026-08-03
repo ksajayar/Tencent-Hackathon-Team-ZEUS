@@ -249,7 +249,14 @@ async def test_set_appointment_no_at_confirm_writes_nothing(demo_pair):
         assert result.scalars().all() == [], "a 'no' at confirm still wrote an event"
 
 
-async def test_set_medication_walkthrough(demo_pair):
+async def test_set_medication_walkthrough(demo_pair, stub_medication_schedule_parse):
+    stub_medication_schedule_parse(
+        {
+            "rrule": "FREQ=DAILY;BYHOUR=8,20;BYMINUTE=0",
+            "label_en": "twice a day, morning and evening",
+            "label_zh": "每天两次，早晚各一次",
+        }
+    )
     await _activate_caregiver(demo_pair)
 
     ask_name = await _caregiver_says(demo_pair, "set medication")
@@ -258,13 +265,13 @@ async def test_set_medication_walkthrough(demo_pair):
     ask_dose = await _caregiver_says(demo_pair, "Donepezil")
     assert ask_dose != ask_name
 
-    ask_schedule = await _caregiver_says(demo_pair, "1 tablet")
-    # The schedule step is a fixed numbered menu, not free-text parsing.
-    assert "1" in ask_schedule and "2" in ask_schedule
-
-    confirm = await _caregiver_says(demo_pair, "3")
+    ask_confirm = await _caregiver_says(demo_pair, "1 tablet")
+    # Free text now, not a numbered menu - describe it naturally.
+    confirm = await _caregiver_says(demo_pair, "twice a day, morning and evening")
+    assert confirm != ask_confirm
     assert "Donepezil" in confirm
     assert "1 tablet" in confirm
+    assert "twice a day" in confirm
 
     # Nothing written before the explicit yes (SAFETY-1 / docs/17 D3).
     async with async_session() as session:
@@ -285,7 +292,6 @@ async def test_set_medication_walkthrough(demo_pair):
         medication = medications[0]
         assert medication.name == "Donepezil"
         assert medication.dose_text == "1 tablet"
-        # Menu option 3 = twice a day, morning and evening.
         assert medication.schedule_rrule == "FREQ=DAILY;BYHOUR=8,20;BYMINUTE=0"
         assert medication.instruction_en == "Take 1 tablet, twice a day, morning and evening."
         assert medication.instruction_zh == "每天两次，早晚各一次服用1 tablet。"
@@ -296,12 +302,15 @@ async def test_set_medication_walkthrough(demo_pair):
         assert medication.verified_at is not None
 
 
-async def test_set_medication_rejects_an_off_menu_schedule_choice(demo_pair):
+async def test_set_medication_reprompts_on_unparseable_schedule(
+    demo_pair, stub_medication_schedule_parse
+):
+    stub_medication_schedule_parse(None)  # simulates Gemini unable to parse it
     await _activate_caregiver(demo_pair)
     for turn in ("set medication", "Metformin", "500mg"):
         await _caregiver_says(demo_pair, turn)
 
-    reprompt = await _caregiver_says(demo_pair, "whenever I remember")
+    reprompt = await _caregiver_says(demo_pair, "asdkjhqwe nonsense")
     assert reprompt
 
     async with async_session() as session:
@@ -313,7 +322,7 @@ async def test_set_medication_rejects_an_off_menu_schedule_choice(demo_pair):
 
 async def test_set_medication_no_at_confirm_writes_nothing(demo_pair):
     await _activate_caregiver(demo_pair)
-    for turn in ("set medication", "Aspirin", "100mg", "1"):
+    for turn in ("set medication", "Aspirin", "100mg", "once a day in the morning"):
         await _caregiver_says(demo_pair, turn)
 
     cancelled = await _caregiver_says(demo_pair, "no")

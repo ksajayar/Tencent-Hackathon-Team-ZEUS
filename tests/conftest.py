@@ -27,6 +27,14 @@ network call to Twilio's API with whatever dummy credentials are in `.env`
 ran real Twilio calls for 11 minutes, ~600s of CPU, before being killed).
 Central and autouse so no future test file can reintroduce that by simply
 not knowing to import a per-file stub.
+
+`stub_medication_schedule_parse` is autouse for the identical reason, on
+the identical failure mode - a test driving `set medication` (any
+`_caregiver_says(..., "twice a day, before meals")`-shaped turn) without
+stubbing gemini_client.parse_medication_schedule() would make a real
+Gemini call with the dummy .env key. Defaults to a fixed once-a-day-morning
+schedule regardless of input text; tests needing a specific schedule or
+the "unparseable" re-prompt path call the returned setter to override it.
 """
 
 import sys
@@ -61,6 +69,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # no
 from sqlalchemy.pool import NullPool  # noqa: E402
 
 import app.db.session as _db_session_module  # noqa: E402
+from app.ai import gemini_client  # noqa: E402
 from app.channels import twilio_whatsapp  # noqa: E402
 from app.core.config import settings  # noqa: E402
 
@@ -96,6 +105,32 @@ def stub_twilio_send(monkeypatch):
 
     monkeypatch.setattr(twilio_whatsapp.provider, "send_text", _fake_send_text)
     return sent
+
+
+@pytest_asyncio.fixture(autouse=True)
+def stub_medication_schedule_parse(monkeypatch):
+    """See module docstring. Default result: once a day, in the morning -
+    deliberately a plausible, boring answer regardless of what free text
+    was actually typed, since most tests aren't exercising this parse step
+    specifically. Call the returned setter to change what the next parse
+    call returns (a plain dict for success, or None to simulate an
+    unparseable description and exercise the re-prompt path)."""
+    result = {
+        "rrule": "FREQ=DAILY;BYHOUR=8;BYMINUTE=0",
+        "label_en": "once a day, in the morning",
+        "label_zh": "每天一次，早上",
+    }
+
+    async def _fake_parse(text: str, *, pipeline: str, model=None, user_id=None):
+        return result
+
+    monkeypatch.setattr(gemini_client, "parse_medication_schedule", _fake_parse)
+
+    def _set_result(new_result: dict | None) -> None:
+        nonlocal result
+        result = new_result
+
+    return _set_result
 
 
 def unique_wa_id(prefix: str) -> str:

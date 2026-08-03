@@ -1,6 +1,7 @@
 import asyncio
 import json
 import random
+import re
 import time
 import uuid
 
@@ -498,3 +499,101 @@ async def classify_emails(
     if response is None or not response.text:
         return None
     return _parse_classification_json(response.text)
+
+
+# §17 set medication: the caregiver describes the schedule in their own
+# words instead of picking from a fixed menu - see the comment this
+# replaces in i18n/strings.py for the original concern (a misread schedule
+# drives real reminder timing). The mitigation is NOT trusting this parse -
+# it's the caller (caregiver.py) echoing rrule/label back in plain language
+# and writing only on an explicit yes, same "parse -> confirm -> write"
+# discipline as every other free-text field in that flow (name, dose).
+# BYHOUR/BYMINUTE only ever encode the clock time; a meal-relation phrase
+# ("before meals", "empty stomach") is descriptive text in the label, never
+# something that shifts the hour on its own - RRULE has no concept of meal
+# timing, so inventing an hour for it would be exactly the silent-drift
+# risk this whole design is trying to avoid.
+_MEDICATION_SCHEDULE_PROMPT = """A caregiver just described, in their own words, when a \
+dementia patient should take a medicine. Turn this into a daily recurrence rule.
+
+Canonical clock times, unless the caregiver states an exact time themselves: morning = 8:00, \
+midday/with lunch = 13:00, evening = 20:00. If the caregiver gives an exact time \
+("7am", "9:30pm"), use that exact hour and minute instead of the canonical one.
+
+Produce one BYHOUR entry per time of day mentioned (comma-separated for more than one, e.g. \
+"8,20" for twice a day). Every entry must share the same BYMINUTE unless the caregiver gave \
+different exact minutes for different times.
+
+A meal-relation phrase ("before meals", "empty stomach", "with food", "after dinner") is never \
+itself a clock time - fold it into the label text only, and if the caregiver gave no separate \
+time-of-day information at all beyond a meal reference, use the canonical time for whichever \
+meal is implied (breakfast/morning meal -> 8:00, lunch -> 13:00, dinner/evening meal -> 20:00).
+
+If the text does not describe a recurring daily schedule at all (nonsense, or something \
+unrelated), set "parseable" to false and leave the other fields empty.
+
+Respond with raw JSON only, no markdown fences, in exactly this shape:
+{"parseable": true|false,
+ "rrule": "FREQ=DAILY;BYHOUR=<one or more comma-separated hours>;BYMINUTE=<minute>",
+ "label_en": "short plain-language description a caregiver would recognise as correct, \
+e.g. 'once a day, in the morning, before food'",
+ "label_zh": "the same meaning, in Simplified Chinese"}
+"""
+
+# The only shape allowed to reach a caller - anchors FREQ=DAILY, one or more
+# 0-23 hours, and a 0-59 minute, so a malformed or out-of-range value from
+# the model can never reach the reminder scheduler. This is the deterministic
+# backstop on the machine-readable side; the confirm-echo is the backstop on
+# the human-readable side - together they're what makes this safe to leave
+# free-text at all (see the module comment above).
+_SCHEDULE_RRULE_RE = re.compile(
+    r"^FREQ=DAILY;BYHOUR=(?:[01]?\d|2[0-3])(?:,(?:[01]?\d|2[0-3]))*;BYMINUTE=[0-5]?\d$"
+)
+
+
+def _parse_medication_schedule_json(raw: str) -> dict | None:
+    cleaned = raw.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`").removeprefix("json").strip()
+    try:
+        data = json.loads(cleaned)
+        if not data.get("parseable"):
+            return None
+        rrule = str(data.get("rrule", "")).strip()
+        label_en = str(data.get("label_en", "")).strip()
+        label_zh = str(data.get("label_zh", "")).strip()
+        if not _SCHEDULE_RRULE_RE.match(rrule) or not label_en or not label_zh:
+            logger.warning("gemini_medication_schedule_invalid_shape")
+            return None
+        return {"rrule": rrule, "label_en": label_en, "label_zh": label_zh}
+    except (json.JSONDecodeError, ValueError, TypeError, AttributeError):
+        logger.warning("gemini_medication_schedule_parse_failed")
+        return None
+
+
+async def parse_medication_schedule(
+    text: str,
+    *,
+    pipeline: str,
+    model: str | None = None,
+    user_id: uuid.UUID | None = None,
+) -> dict | None:
+    """§17 set medication, schedule step. Returns {"rrule", "label_en",
+    "label_zh"} or None on failure/unparseable/invalid shape - callers
+    (caregiver.py) must re-prompt the caregiver in that case, never fall
+    back to guessing a schedule (SAFETY-1).
+    """
+    response = await _call_model(
+        system_prompt=(
+            "You are a careful scheduling assistant for an elderly dementia patient's "
+            "caregiver-monitored medication reminders."
+        ),
+        contents=_MEDICATION_SCHEDULE_PROMPT + f'\n\nCaregiver said: "{text}"',
+        pipeline=pipeline,
+        model=model or settings.gemini_model_main,
+        user_id=user_id,
+        timeout_seconds=TEXT_TIMEOUT_SECONDS,
+    )
+    if response is None or not response.text:
+        return None
+    return _parse_medication_schedule_json(response.text)
