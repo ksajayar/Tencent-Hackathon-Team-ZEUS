@@ -29,15 +29,40 @@ Central and autouse so no future test file can reintroduce that by simply
 not knowing to import a per-file stub.
 """
 
+import sys
+import types
 import uuid
 
-import pytest_asyncio
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.pool import NullPool
+# MUST come before any `app.` import that reaches app/channels/media.py.
+#
+# `python-magic` is a ctypes binding to the native libmagic library, which
+# exists in the container (the Dockerfile apt-installs libmagic1) but not on
+# a bare Windows dev box. On Windows its import doesn't fail - it HANGS
+# indefinitely searching for the DLL (confirmed by faulthandler: stuck in
+# magic/compat.py at import). Since app/pipelines/contact.py imports
+# app/channels/media.py, that made every test module touching the contact
+# pipeline uncollectable on Windows, with no error - just a hung pytest.
+#
+# Only `magic.from_buffer` is used (media.py:41, to sniff a downloaded
+# file's MIME type), and no test here exercises real media downloads, so a
+# stub is enough.
+#
+# Gated on platform rather than a try/except around the import: the failure
+# mode is a HANG, not an exception, so try/except would never get the
+# chance to catch anything. On Linux (CI, the container) libmagic is really
+# present, so this is skipped and the real package is used untouched.
+if sys.platform == "win32" and "magic" not in sys.modules:
+    _magic_stub = types.ModuleType("magic")
+    _magic_stub.from_buffer = lambda content, mime=False: "application/octet-stream"
+    sys.modules["magic"] = _magic_stub
 
-import app.db.session as _db_session_module
-from app.channels import twilio_whatsapp
-from app.core.config import settings
+import pytest_asyncio  # noqa: E402
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # noqa: E402
+from sqlalchemy.pool import NullPool  # noqa: E402
+
+import app.db.session as _db_session_module  # noqa: E402
+from app.channels import twilio_whatsapp  # noqa: E402
+from app.core.config import settings  # noqa: E402
 
 _test_engine = create_async_engine(settings.database_url, poolclass=NullPool)
 _test_sessionmaker = async_sessionmaker(_test_engine, expire_on_commit=False)

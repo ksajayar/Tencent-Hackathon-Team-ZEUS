@@ -224,9 +224,7 @@ async def test_contact_card_through_to_caregiver_activation(demo_pair, monkeypat
     )
 
     async with async_session() as session:
-        result = await session.execute(
-            select(Contact).where(Contact.user_id == ids["patient_id"])
-        )
+        result = await session.execute(select(Contact).where(Contact.user_id == ids["patient_id"]))
         contact = result.scalars().first()
     assert contact is not None
     assert contact.phone_e164 == CAREGIVER_PHONE
