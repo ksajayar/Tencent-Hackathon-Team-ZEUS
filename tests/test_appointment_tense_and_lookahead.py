@@ -49,7 +49,14 @@ def _event(start_local: datetime, *, summary="Health checkup", location=None, ho
 
 def test_event_finished_earlier_today_reads_as_past():
     now = datetime.now(SG)
-    finished = now - timedelta(hours=3)
+    # Halfway between local midnight and now, so this stays same-day
+    # whatever time the suite runs at - a fixed "-3 hours" rolled into
+    # yesterday for anything run in the first 3 hours after midnight
+    # (caught by this suite running at 00:18 local).
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    finished = midnight + (now - midnight) / 2
+    if finished >= now:
+        pytest.skip("no elapsed same-day past instant yet")
     rendered = render_when(
         finished.astimezone(UTC), is_all_day=False, tz_name="Asia/Singapore", language="en"
     )
@@ -76,8 +83,12 @@ def test_event_later_today_still_reads_as_today():
 
 def test_past_and_future_are_distinguishable_in_chinese():
     now = datetime.now(SG)
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    finished = midnight + (now - midnight) / 2
+    if finished >= now:
+        pytest.skip("no elapsed same-day past instant yet")
     past = render_when(
-        (now - timedelta(hours=3)).astimezone(UTC),
+        finished.astimezone(UTC),
         is_all_day=False,
         tz_name="Asia/Singapore",
         language="zh-Hans",
