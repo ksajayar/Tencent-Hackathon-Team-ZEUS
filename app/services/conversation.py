@@ -113,9 +113,27 @@ async def get_recent_messages(
 
 
 async def get_last_outbound_message(session: AsyncSession, user_id: uuid.UUID) -> Message | None:
+    """The most recent *logical* reply, for resolving a pending multi-turn
+    flow (§07 §7.11, §17) against the meta it carries.
+
+    A voice reply is two rows (CHANNEL-2: text then audio, never combined)
+    written in the same transaction, so `send_audio()` and `send_text()`
+    can land on the exact same `created_at` - Postgres `now()` is
+    transaction-scoped. `ORDER BY created_at DESC LIMIT 1` is then an
+    undefined tie between them, and the audio row never carries `meta`
+    (only the text send does), so a caregiver mid-flow via voice could
+    silently lose their pending state depending on which plan the query
+    planner picks. Excluding `kind == 'audio'` makes "the last message I
+    sent" mean the text row - the one query callers actually care about -
+    rather than depending on row-insertion order.
+    """
     result = await session.execute(
         select(Message)
-        .where(Message.user_id == user_id, Message.direction == "outbound")
+        .where(
+            Message.user_id == user_id,
+            Message.direction == "outbound",
+            Message.kind != "audio",
+        )
         .order_by(Message.created_at.desc())
         .limit(1)
     )

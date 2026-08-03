@@ -40,5 +40,9 @@ pypdf==5.1.0
 # --- M9: Location, SOS & contacts ---
 vobject==0.9.7
 
-# Later milestones add: httpx, pytest/pytest-asyncio/respx/testcontainers.
+# --- M10: testing ---
+pytest==8.3.4
+pytest-asyncio==0.25.2
+
+# Later milestones add: httpx, respx, testcontainers.
 # Do not add ahead of the milestone that needs them.
