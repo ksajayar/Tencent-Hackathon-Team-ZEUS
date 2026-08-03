@@ -108,7 +108,14 @@ def _format_event_line(event: CalendarEvent, tz_name: str) -> str:
         until = calendar_service.render_time_of_day(event.end_at, tz_name=tz_name, language="en")
         when = f"{when}, until {until}"
 
-    parts = [f"{when}: {event.summary}"]
+    # Explicit marker rather than relying on the model to compare the
+    # rendered time against "now" - it has no reliable clock, and reading
+    # "earlier today at 1:45 in the afternoon" as past is exactly the
+    # inference it silently got wrong before (stating a finished
+    # appointment in the present tense). The persona rule keys off this
+    # token, not off the phrasing.
+    prefix = "[already happened] " if calendar_service.has_finished(event) else ""
+    parts = [f"{prefix}{when}: {event.summary}"]
     if event.location:
         parts.append(f"at {event.location}")
     names = [

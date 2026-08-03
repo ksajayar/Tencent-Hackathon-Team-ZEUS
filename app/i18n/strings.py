@@ -67,6 +67,35 @@ NO_MEDICATIONS_CAREGIVER = {
     "zh-Hans": "目前还没有{patient_name}的用药记录。",
 }
 
+# "What's my next appointment?" - docs/11 §11.7 demo step 3. Deterministic,
+# no LLM in the answer path, same reasoning as NO_MEDICATIONS above: the
+# events are stored facts, and the day/time phrasing is already rendered by
+# calendar_service.render_when() in the persona's own register.
+NEXT_APPOINTMENT = {
+    "en": "Your next appointment is {summary}, {when}. You are all set.",
+    "zh-Hans": "您的下一个预约是{summary}，{when}。都安排好了。",
+}
+
+NEXT_APPOINTMENT_CAREGIVER = {
+    "en": "{patient_name}'s next appointment is {summary}, {when}.",
+    "zh-Hans": "{patient_name}的下一个预约是{summary}，{when}。",
+}
+
+NEXT_APPOINTMENT_LOCATION = {
+    "en": " It is at {location}.",
+    "zh-Hans": "地点是{location}。",
+}
+
+NO_UPCOMING_APPOINTMENTS = {
+    "en": "You have no appointments coming up. I will remind you when one is booked.",
+    "zh-Hans": "您接下来没有预约。有安排的时候我会提醒您。",
+}
+
+NO_UPCOMING_APPOINTMENTS_CAREGIVER = {
+    "en": "{patient_name} has no appointments coming up.",
+    "zh-Hans": "{patient_name}接下来没有预约。",
+}
+
 AUDIO_TOO_LONG = {
     "en": "That was a bit long, could you say it again more briefly?",
     "zh-Hans": "这段有点长，可以再说一次、简短一点吗？",

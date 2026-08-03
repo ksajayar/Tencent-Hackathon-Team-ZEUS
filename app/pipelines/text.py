@@ -38,6 +38,9 @@ from app.i18n.strings import (
     MEDICATION_ACK_CONFIRMATION,
     MEDICATION_GUARD_FALLBACK,
     MEDICATION_GUARD_FALLBACK_CAREGIVER,
+    NEXT_APPOINTMENT,
+    NEXT_APPOINTMENT_CAREGIVER,
+    NEXT_APPOINTMENT_LOCATION,
     NO_BLOODWORK,
     NO_BLOODWORK_CAREGIVER,
     NO_HOME_ADDRESS,
@@ -45,6 +48,8 @@ from app.i18n.strings import (
     NO_IMPORTANT_EMAILS,
     NO_MEDICATIONS,
     NO_MEDICATIONS_CAREGIVER,
+    NO_UPCOMING_APPOINTMENTS,
+    NO_UPCOMING_APPOINTMENTS_CAREGIVER,
 )
 from app.pipelines import caregiver as caregiver_pipeline
 from app.pipelines.reply import Reply
@@ -96,6 +101,28 @@ _MEDICATION_QUERY_PHRASES = [
 ]
 _MEDICATION_QUERY_RE = re.compile(
     "|".join(re.escape(p) for p in _MEDICATION_QUERY_PHRASES), re.IGNORECASE
+)
+
+# docs/11 §11.7 demo step 3. Subject-agnostic phrasing (same reasoning as
+# _MEDICATION_QUERY_RE), so the caregiver's third-person "when is her next
+# appointment" matches the same pattern. Checked BEFORE the caregiver `set
+# appointment` command can be confused for it - see the ordering note in
+# handle()'s caregiver branch, and note "set appointment"/"设置预约" do not
+# match any phrase here (asserted in tests).
+_APPOINTMENT_QUERY_PHRASES = [
+    "next appointment",
+    "next visit",
+    "upcoming appointment",
+    "any appointments",
+    "when is my appointment",
+    "when's my appointment",
+    "下一个预约",
+    "下次预约",
+    "接下来的预约",
+    "什么时候看医生",
+]
+_APPOINTMENT_QUERY_RE = re.compile(
+    "|".join(re.escape(p) for p in _APPOINTMENT_QUERY_PHRASES), re.IGNORECASE
 )
 
 _EMAIL_QUERY_PHRASES = [
@@ -388,6 +415,50 @@ async def _blood_type_query(
     return result.format(blood_type=blood_type)
 
 
+async def _appointment_query(
+    session: AsyncSession, patient: User, reply_language: str, *, for_caregiver: bool
+) -> str:
+    """docs/11 §11.7 step 3 - "What's my next appointment?". Deterministic,
+    no LLM: the events are stored facts and `render_when` already produces
+    the persona's spoken day/time register, so routing this through the
+    model would only add a chance of it inventing or dropping the time
+    (§07 §7.6). Reaches past the two-day context window that ordinary
+    conversation uses - see get_upcoming_events for why that stays narrow.
+    """
+    events = await calendar_service.get_upcoming_events(session, patient.id)
+    if not events:
+        template = NO_UPCOMING_APPOINTMENTS_CAREGIVER if for_caregiver else NO_UPCOMING_APPOINTMENTS
+        result = template.get(reply_language, template["en"])
+        return (
+            result.format(patient_name=patient.display_name or "the patient")
+            if for_caregiver
+            else result
+        )
+
+    event = events[0]
+    when = calendar_service.render_when(
+        event.start_at,
+        is_all_day=event.is_all_day,
+        tz_name=patient.timezone,
+        language=reply_language,
+    )
+    template = NEXT_APPOINTMENT_CAREGIVER if for_caregiver else NEXT_APPOINTMENT
+    result = template.get(reply_language, template["en"])
+    reply = (
+        result.format(
+            patient_name=patient.display_name or "the patient", summary=event.summary, when=when
+        )
+        if for_caregiver
+        else result.format(summary=event.summary, when=when)
+    )
+    if event.location:
+        location_template = NEXT_APPOINTMENT_LOCATION.get(
+            reply_language, NEXT_APPOINTMENT_LOCATION["en"]
+        )
+        reply += location_template.format(location=event.location)
+    return reply
+
+
 async def _bloodwork_query(
     session: AsyncSession, patient: User, reply_language: str, *, for_caregiver: bool
 ) -> str:
@@ -552,6 +623,9 @@ async def _generate_reply(
     if _MEDICATION_QUERY_RE.search(text):
         return Reply(await _medication_query(session, user, reply_language))
 
+    if _APPOINTMENT_QUERY_RE.search(text):
+        return Reply(await _appointment_query(session, user, reply_language, for_caregiver=False))
+
     if _EMAIL_QUERY_RE.search(text):
         return Reply(await _email_query(session, user, reply_language))
 
@@ -686,6 +760,12 @@ async def handle(
                 elif _MEDICATION_QUERY_RE.search(text):
                     reply = Reply(
                         await _caregiver_medication_query(session, linked_patient, reply_language)
+                    )
+                elif _APPOINTMENT_QUERY_RE.search(text):
+                    reply = Reply(
+                        await _appointment_query(
+                            session, linked_patient, reply_language, for_caregiver=True
+                        )
                     )
                 elif _BLOOD_TYPE_QUERY_RE.search(text):
                     reply = Reply(

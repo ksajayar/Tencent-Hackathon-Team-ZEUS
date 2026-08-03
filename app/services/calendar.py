@@ -30,6 +30,46 @@ async def get_schedule_window(
     return list(result.scalars().all())
 
 
+LOOKAHEAD_DAYS = 90
+LOOKAHEAD_LIMIT = 3
+
+
+async def get_upcoming_events(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    *,
+    days: int = LOOKAHEAD_DAYS,
+    limit: int = LOOKAHEAD_LIMIT,
+) -> list[CalendarEvent]:
+    """§17 §7-style deterministic read for "what's my next appointment?" -
+    the demo script's own step 3 (docs/11 §11.7), which nothing answered
+    before: `get_schedule_window` stops at tomorrow, so the LLM's context
+    block said "No events scheduled today or tomorrow" for anything further
+    out and the model had nothing to work from.
+
+    Deliberately a SEPARATE query rather than a wider `get_schedule_window`.
+    That two-day window is a persona decision, not an oversight (§05 §5.1) -
+    a dementia patient's ordinary conversation should not carry three months
+    of calendar. This answers the explicit question only, capped at `limit`
+    events so the reply stays within the persona's three-item rule.
+
+    Filters on start_at > now, not >= midnight: "next" means still to come,
+    so an appointment that finished an hour ago is not it.
+    """
+    now = datetime.now(UTC)
+    result = await session.execute(
+        select(CalendarEvent)
+        .where(
+            CalendarEvent.user_id == user_id,
+            CalendarEvent.start_at > now,
+            CalendarEvent.start_at < now + timedelta(days=days),
+        )
+        .order_by(CalendarEvent.start_at)
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
 def find_conflicts(
     events: list[CalendarEvent],
 ) -> list[tuple[CalendarEvent, CalendarEvent]]:
@@ -46,30 +86,56 @@ def find_conflicts(
     return conflicts
 
 
+def has_finished(event: CalendarEvent) -> bool:
+    """Whether an event is already over. `get_schedule_window` starts at
+    local midnight, so events that finished earlier today are deliberately
+    still in the window (a patient who asks "do I have a checkup today?"
+    after the fact needs to hear that they already went, not silence) -
+    but every caller rendering one has to know to say so in the past tense.
+    Compares end_at, not start_at: an appointment in progress is not over."""
+    return event.end_at <= datetime.now(UTC)
+
+
 def render_when(start_at: datetime, *, is_all_day: bool, tz_name: str, language: str) -> str:
     """Day-relative phrasing ("tomorrow at 2 in the afternoon") for the
     templated (non-LLM) reschedule notice, and for the <schedule> context
     block. The context block feeds the LLM this phrasing already rendered
     rather than a raw "14:00" it is then forbidden to echo (§07 §7.6): given
     only the clock form, the model tended to drop the time from the reply
-    altogether instead of converting it."""
+    altogether instead of converting it.
+
+    Same-day events distinguish past from future ("earlier today at 1:45 in
+    the afternoon" vs "today at 3 in the afternoon"). Comparing dates alone
+    rendered a checkup that finished at 1:45pm as plain "today at 1:45 in
+    the afternoon" at 4pm, which every surrounding template then stated in
+    the present tense - telling a dementia patient they still have an
+    appointment they had already attended. Only same-day needs the
+    distinction: "yesterday"/"on 3 August" already read as past, and
+    "tomorrow" cannot be.
+    """
     tz = ZoneInfo(tz_name)
     local = start_at.astimezone(tz)
-    delta_days = (local.date() - datetime.now(tz).date()).days
+    now_local = datetime.now(tz)
+    delta_days = (local.date() - now_local.date()).days
+    is_past_today = delta_days == 0 and local < now_local
 
     if language == "zh-Hans":
         if delta_days == 0:
-            day_part = "今天"
+            day_part = "今天稍早" if is_past_today else "今天"
         elif delta_days == 1:
             day_part = "明天"
+        elif delta_days == -1:
+            day_part = "昨天"
         else:
             day_part = f"{local.month}月{local.day}日"
         return day_part if is_all_day else f"{day_part}{_time_phrase_zh(local)}"
 
     if delta_days == 0:
-        day_part = "today"
+        day_part = "earlier today" if is_past_today else "today"
     elif delta_days == 1:
         day_part = "tomorrow"
+    elif delta_days == -1:
+        day_part = "yesterday"
     else:
         day_part = f"on {local.day} {local.strftime('%B')}"
     return day_part if is_all_day else f"{day_part} at {_time_phrase_en(local)}"
