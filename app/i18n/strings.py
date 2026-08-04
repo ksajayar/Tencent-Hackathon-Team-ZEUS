@@ -261,15 +261,43 @@ CONTACT_CAREGIVER_NO = {
 # time a caregiver's own inbound message resolves to a pending link, in place
 # of answering that message - deterministic and not LLM-generated so the very
 # first thing a caregiver reads can't be an improvised, possibly-overpromising
-# introduction (the same reasoning as OAUTH_SUCCESS above). Command names are
-# safe to list now that pipelines/caregiver.py actually implements them.
-CAREGIVER_LINK_ACTIVATED = {
-    "en": "You've been added as {patient_name}'s caregiver. Ask me about "
-    "{patient_name}'s medicines, appointments, or recent emails. You can also send: "
-    "set appointment, set bloodwork, set address, set medication, or check candidates.",
-    "zh-Hans": "您已被添加为{patient_name}的照顾者。您可以向我询问{patient_name}的用药、"
-    "预约或近期邮件。您也可以发送：set appointment（设置预约）、set bloodwork（设置验血）、"
-    "set address（设置地址）、set medication（设置用药）、check candidates（查看待审核）。",
+# introduction (the same reasoning as OAUTH_SUCCESS above). Two separate
+# sends, not one message - greeting first, capability list second - each
+# through outbound.send_text so CHANNEL-1's throttle naturally paces them.
+#
+# CAREGIVER_LINK_ACTIVATED_COMMANDS advertises `check`/`delete` and
+# `reminder` as their own object, plus the general `action parameter`
+# grammar - none of that is implemented yet (only the five fixed phrases in
+# caregiver.py's _SET_*_RE/_CHECK_CANDIDATES_RE are real: set appointment,
+# set bloodwork, set address, set medication, check candidates). This is a
+# deliberate choice to advertise the intended command surface ahead of the
+# implementation landing (tracked separately) - a caregiver trying one of
+# the not-yet-real examples today falls through to _caregiver_qa (free-text
+# chat) with no guard on that path, same known gap as an unmatched command
+# always had, just now reachable via an example shown to them directly.
+CAREGIVER_LINK_ACTIVATED_GREETING = {
+    "en": "Hello! I'm Kopi, {patient_name}'s AI assistant. They've added you as their caregiver.",
+    "zh-Hans": "您好！我是Kopi，{patient_name}的AI助手。他们已经把您添加为照顾者。",
+}
+
+CAREGIVER_LINK_ACTIVATED_COMMANDS = {
+    "en": "You can ask me about {patient_name}'s medicines, appointments, or recent emails.\n\n"
+    "You can also `set`, `check`, or `delete`:\n"
+    "`appointment` • `reminder` • `medication` • `address` • `bloodwork`\n\n"
+    "Format: `action parameter`\n\n"
+    "Examples:\n"
+    "`check medication`\n"
+    "`set reminder Take medicine at 8pm`\n"
+    "`delete appointment`",
+    "zh-Hans": "您可以向我询问{patient_name}的用药、预约或近期邮件。\n\n"
+    "您还可以使用`set`（设置）、`check`（查看）或`delete`（删除）：\n"
+    "`appointment`（预约）• `reminder`（提醒）• `medication`（用药）• `address`（地址）• "
+    "`bloodwork`（验血）\n\n"
+    "格式：`action parameter`（动作 参数）\n\n"
+    "例如：\n"
+    "`check medication`（查看用药）\n"
+    "`set reminder Take medicine at 8pm`（设置提醒：晚上8点吃药）\n"
+    "`delete appointment`（删除预约）",
 }
 
 CHECKIN_PROMPT = {

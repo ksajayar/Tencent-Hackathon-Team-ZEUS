@@ -26,7 +26,8 @@ from app.i18n.strings import (
     BLOOD_TYPE_RESULT_CAREGIVER,
     BLOODWORK_RESULT,
     BLOODWORK_RESULT_CAREGIVER,
-    CAREGIVER_LINK_ACTIVATED,
+    CAREGIVER_LINK_ACTIVATED_COMMANDS,
+    CAREGIVER_LINK_ACTIVATED_GREETING,
     CONNECT_GOOGLE_LINK,
     CONTACT_ASK_CAREGIVER,
     CONTACT_CAREGIVER_NO,
@@ -704,18 +705,25 @@ async def handle(
                     user_id=str(user.id),
                     patient_id=str(linked_patient.id),
                 )
-                template = CAREGIVER_LINK_ACTIVATED.get(
-                    reply_language, CAREGIVER_LINK_ACTIVATED["en"]
-                )
                 name = linked_patient.display_name or "the patient"
-                reply_text = template.format(patient_name=name)
-                await outbound.send_text(session, user, conversation_id, reply_text)
+                greeting = CAREGIVER_LINK_ACTIVATED_GREETING.get(
+                    reply_language, CAREGIVER_LINK_ACTIVATED_GREETING["en"]
+                ).format(patient_name=name)
+                commands = CAREGIVER_LINK_ACTIVATED_COMMANDS.get(
+                    reply_language, CAREGIVER_LINK_ACTIVATED_COMMANDS["en"]
+                ).format(patient_name=name)
+                # Two sends, not one message with a line break - matches the
+                # two-bubble presentation this copy was designed for.
+                # outbound.py's existing per-message throttle naturally
+                # paces the second a few seconds after the first.
+                await outbound.send_text(session, user, conversation_id, greeting)
+                await outbound.send_text(session, user, conversation_id, commands)
                 await session.commit()
                 # The message that triggered activation is answered next time
                 # they write, now that role/persona are correctly set up -
                 # deliberately not also answered as caregiver_qa in the same
                 # turn, so the first thing a caregiver ever reads is the
-                # deterministic activation string, never LLM-generated text.
+                # deterministic activation strings, never LLM-generated text.
                 return
 
         if sos.is_sos_trigger(text):

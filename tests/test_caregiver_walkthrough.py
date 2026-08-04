@@ -145,18 +145,69 @@ async def _activate_caregiver(ids: dict) -> str:
     """First inbound message flips role='patient' -> 'caregiver' and returns
     the deterministic activation string, deliberately WITHOUT also answering
     the message (text.py: the first thing a caregiver reads is never
-    LLM-generated)."""
+    LLM-generated). Activation is two separate sends (greeting, then
+    commands); this returns only the second/latest, same contract as
+    _caregiver_says. Use _activation_messages for a test that needs both.
+    """
     return await _caregiver_says(ids, "hi")
 
 
-async def test_caregiver_activation_on_first_message(demo_pair):
-    reply = await _activate_caregiver(demo_pair)
+async def _activation_messages(ids: dict) -> tuple[str, str]:
+    """Drives the same first-message activation as _activate_caregiver, but
+    returns (greeting, commands) - the two separate sends, for a test that
+    needs to check both.
 
-    assert "caregiver" in reply.lower()
-    assert "Mary" in reply
-    # The four set commands are advertised on activation (docs/17 §4.1).
-    for command in ("set appointment", "set bloodwork", "set address", "set medication"):
-        assert command in reply
+    Both sends happen inside ONE transaction in text.py::handle (both
+    outbound.send_text calls precede its single session.commit()), and
+    Postgres `now()` is transaction-scoped - so the two messages'
+    created_at are identical, making "ORDER BY created_at DESC" the exact
+    same undefined tie already fixed once this session for voice replies
+    (see get_last_outbound_message). Harmless in production here (neither
+    message carries `meta`, so which one a future query treats as "latest"
+    doesn't change any pending-flow behaviour) but real enough to break a
+    test that assumes send order from timestamp order - identifying by
+    content instead sidesteps the tie rather than depending on it.
+    """
+    await _caregiver_says(ids, "hi")
+    async with async_session() as session:
+        result = await session.execute(
+            select(Message)
+            .where(Message.user_id == ids["caregiver_id"], Message.direction == "outbound")
+            .order_by(Message.created_at.desc())
+            .limit(2)
+        )
+        bodies = [m.body for m in result.scalars().all()]
+    if len(bodies) != 2:
+        raise AssertionError(f"expected 2 activation messages, found {len(bodies)}")
+    greeting = next(b for b in bodies if "kopi" in b.lower())
+    commands = next(b for b in bodies if b != greeting)
+    return greeting, commands
+
+
+async def test_caregiver_activation_on_first_message(demo_pair):
+    greeting, commands = await _activation_messages(demo_pair)
+
+    assert "kopi" in greeting.lower()
+    assert "caregiver" in greeting.lower()
+    assert "Mary" in greeting
+
+    assert "Mary" in commands
+    # Real commands, still the only ones actually implemented today
+    # (caregiver.py's fixed-phrase regexes) - advertised via the general
+    # verb+noun grammar and the aspirational `delete`/`reminder` examples;
+    # see the string's own comment for why those aren't real yet.
+    for word in (
+        "set",
+        "check",
+        "delete",
+        "appointment",
+        "reminder",
+        "medication",
+        "address",
+        "bloodwork",
+    ):
+        assert f"`{word}`" in commands
+    assert "action parameter" in commands
 
     async with async_session() as session:
         caregiver = await session.get(User, demo_pair["caregiver_id"])

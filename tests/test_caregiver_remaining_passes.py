@@ -190,6 +190,36 @@ async def _activate_caregiver(ids: dict) -> str:
     return await _caregiver_says(ids, "hi")
 
 
+async def _activation_messages(ids: dict) -> tuple[str, str]:
+    """Activation is two separate sends (greeting, then commands) - this
+    drives the same first message but returns both, for a test that needs
+    to check the greeting specifically rather than just the latest
+    (commands) message _activate_caregiver returns.
+
+    Both sends share one transaction in text.py::handle, and Postgres
+    `now()` is transaction-scoped, so their created_at is identical -
+    "ORDER BY created_at DESC" can't reliably tell send order apart (same
+    tie already fixed once this session for voice replies). Identifying by
+    content (the greeting names "Kopi") sidesteps the tie instead of
+    depending on it.
+    """
+    await _ensure_caregiver_conversation(ids)
+    await _caregiver_says(ids, "hi")
+    async with async_session() as session:
+        result = await session.execute(
+            select(Message)
+            .where(Message.user_id == ids["caregiver_id"], Message.direction == "outbound")
+            .order_by(Message.created_at.desc())
+            .limit(2)
+        )
+        bodies = [m.body for m in result.scalars().all()]
+    if len(bodies) != 2:
+        raise AssertionError(f"expected 2 activation messages, found {len(bodies)}")
+    greeting = next(b for b in bodies if "kopi" in b.lower())
+    commands = next(b for b in bodies if b != greeting)
+    return greeting, commands
+
+
 # --- contact card -> caregiver activation -----------------------------------
 
 
@@ -248,9 +278,10 @@ async def test_contact_card_through_to_caregiver_activation(demo_pair, monkeypat
     assert contact.relationship == "caregiver"
 
     # 4) The caregiver's own first message activates them.
-    activation = await _activate_caregiver(ids)
-    assert "caregiver" in activation.lower()
-    assert "Mary" in activation
+    greeting, commands = await _activation_messages(ids)
+    assert "caregiver" in greeting.lower()
+    assert "Mary" in greeting
+    assert "Mary" in commands
 
     async with async_session() as session:
         caregiver = await session.get(User, ids["caregiver_id"])
