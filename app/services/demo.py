@@ -348,6 +348,26 @@ async def ensure_demo_template(session: AsyncSession) -> None:
 # --- clone (from the template's live rows, onto a newly-provisioned patient) ---
 
 
+async def is_unprovisioned_demo_patient(session: AsyncSession, patient: User) -> bool:
+    """A number that was already in `users` before DEMO_MODE was switched on
+    never went through clone_template_for_patient - app/api/webhooks.py gates
+    that on `is_new_user`, and an existing number is by definition not new.
+    The template seeds fine, but that patient owns none of the cloned rows, so
+    every record-backed answer ("what medicine do I take", "what's my blood
+    type") correctly reports nothing on file.
+
+    Detected by the absence of any medication row: clone_template_for_patient
+    always writes three, so "no medications at all" means "never provisioned"
+    for the duration of a demo. Acting on it is safe to repeat - every
+    _clone_* helper below already skips rows that exist - so a patient who
+    somehow lands here twice gets no duplicates.
+    """
+    result = await session.execute(
+        select(Medication.id).where(Medication.patient_id == patient.id).limit(1)
+    )
+    return result.scalars().first() is None
+
+
 async def _clone_medications(
     session: AsyncSession, template: User, patient: User, caregiver: User
 ) -> int:

@@ -55,8 +55,23 @@ async def twilio_inbound(
         # DB writes here (no network/AI call), so this stays inside
         # WEBHOOK-1's fast-ack budget; the welcome + Google-connect-link
         # sends happen afterwards, in the background task (router.py).
-        is_demo_new_patient = settings.demo_mode and is_new_user and user.role == "patient"
-        if is_demo_new_patient:
+        is_demo_patient = settings.demo_mode and user.role == "patient"
+        is_demo_new_patient = is_demo_patient and is_new_user
+        # A number that was already in `users` when DEMO_MODE was switched on
+        # is not `is_new_user`, so it never got a clone and answers every
+        # record-backed question with "nothing on file" - the state every
+        # number used to test before the flag went on is now in. Backfilled
+        # here on their next message rather than by deleting and re-creating
+        # the user. Deliberately does NOT set is_demo_new_patient: the
+        # welcome + Google-link sends are for a genuinely new number, and
+        # replaying them mid-conversation (possibly after that patient has
+        # already connected Google) would read as the bot resetting itself.
+        needs_backfill = (
+            is_demo_patient
+            and not is_new_user
+            and await demo_service.is_unprovisioned_demo_patient(session, user)
+        )
+        if is_demo_new_patient or needs_backfill:
             await demo_service.clone_template_for_patient(session, user)
 
         conversation = await conversation_service.get_or_create_open_conversation(session, user)
