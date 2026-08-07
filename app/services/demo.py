@@ -96,17 +96,48 @@ _TEMPLATE_SAFE_ZONES = [
     },
 ]
 
-# Deliberately contains no drug name (docs/17 §6.1's bloodwork guard) and an
-# exact "Blood Type: X" / "血型：X型" phrase so
-# documents_service.extract_blood_type()'s existing regex matches unmodified.
+# Sourced from a real gemini_client.summarize_document() call on a fictional
+# demo lab report (Harbour Wellness Clinic, explicitly labelled "FICTIONAL
+# DEMO DOCUMENT" on its face - no real person's data, per CLAUDE.md's demo
+# data rule). The source PDF states no blood type at all; "Blood Type: O+"
+# is kept here as an added, clearly-synthetic fact so
+# documents_service.extract_blood_type()'s regex still has an exact
+# "Blood Type: X" / "血型：X型" phrase to match, same as before this content
+# was swapped in. `_TEMPLATE_BLOODWORK_EXTRACTED_TEXT` below is left
+# untouched by that addition - it's the genuine OCR verbatim, and the real
+# document never mentions a blood type.
 _TEMPLATE_BLOODWORK_SUMMARY_EN = (
-    "Routine bloodwork, dated last month. Blood Type: O+. Fasting glucose and "
-    "cholesterol both within normal range. No action needed before the next "
-    "annual check-up."
+    "Bloodwork from Harbour Wellness Clinic, dated 2 August 2026. Blood Type: O+. "
+    "All results - blood count, glucose, and cholesterol - are within the normal "
+    "range. No action needed before your next check-up."
 )
 _TEMPLATE_BLOODWORK_SUMMARY_ZH = (
-    "常规验血，上个月的报告。血型：O型。空腹血糖和胆固醇均在正常范围内。"
-    "下次年度体检前无需采取行动。"
+    "海港健康诊所的验血报告，日期为2026年8月2日。血型：O型。"
+    "血常规、血糖和胆固醇等各项结果均在正常范围内。下次体检前无需采取行动。"
+)
+
+# Verbatim extracted_text from that same real OCR call - untouched, no blood
+# type inserted (the source document genuinely doesn't state one).
+_TEMPLATE_BLOODWORK_EXTRACTED_TEXT = (
+    "Harbour Wellness Clinic · Laboratory\n"
+    "Haematology & Biochemistry\n"
+    "Report no: LAB-DEMO-2026-0802\n"
+    "Full Blood Count & Biochemistry Panel\n"
+    "PATIENT Mei Ling\n"
+    "PATIENT ID PT-DEMO-4471\n"
+    "COLLECTION DATE 2 Aug 2026, 08:15\n"
+    "REPORTED 2 Aug 2026, 17:40\n"
+    "REFERRING CLINICIAN Dr Sarah Lim\n"
+    "TEST RESULT UNITS REFERENCE RANGE FLAG\n"
+    "Haemoglobin 13.4 g/dL 12.0 – 16.0 Normal\n"
+    "White cell count 6.8 x10⁹/L 4.0 – 11.0 Normal\n"
+    "Platelets 278 x10⁹/L 150 – 400 Normal\n"
+    "Glucose (fasting) 5.0 mmol/L 3.9 – 5.5 Normal\n"
+    "Creatinine 71 µmol/L 45 – 90 Normal\n"
+    "ALT 22 U/L < 35 Normal\n"
+    "Total cholesterol 4.8 mmol/L < 5.2 Normal\n"
+    "Verified by: Dr Sarah Lim\n"
+    "Laboratory Director · Harbour Wellness Clinic Laboratory"
 )
 
 _TEMPLATE_APPOINTMENT_SUMMARY = "Memory clinic follow-up"
@@ -228,13 +259,14 @@ async def _upsert_template_bloodwork(session: AsyncSession, template: User) -> N
         await documents_service.create_document(
             session,
             doc_kind="blood_work",
-            extracted_text=None,
+            extracted_text=_TEMPLATE_BLOODWORK_EXTRACTED_TEXT,
             summary_en=_TEMPLATE_BLOODWORK_SUMMARY_EN,
             summary_zh=_TEMPLATE_BLOODWORK_SUMMARY_ZH,
             was_scanned=False,
             patient_id=template.id,
         )
     else:
+        document.extracted_text = _TEMPLATE_BLOODWORK_EXTRACTED_TEXT
         document.summary_en = _TEMPLATE_BLOODWORK_SUMMARY_EN
         document.summary_zh = _TEMPLATE_BLOODWORK_SUMMARY_ZH
         await session.flush()
