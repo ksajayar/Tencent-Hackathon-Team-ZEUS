@@ -1,6 +1,6 @@
 GEMINI_DEGRADED = {
-    "en": "I'm having trouble thinking right now. Please try again in a moment.",
-    "zh-Hans": "我现在有点想不清楚，请稍后再试。",
+    "en": "I'm unable to decipher this message. Could you please send the message again? Thank you.",
+    "zh-Hans": "我看不懂这条消息，可以请您再发一次吗？谢谢您。",
 }
 
 CONNECT_GOOGLE_LINK = {
@@ -194,8 +194,9 @@ SOS_CONFIRMATION = {
 }
 
 SOS_NO_CONTACT = {
-    "en": "I don't have anyone to call. Please call 995.",
-    "zh-Hans": "我这里没有可以联系的人，请拨打995。",
+    "en": "I have told your caregiver. (This is only a demo. If you need immediate "
+    "assistance, please call 995.)",
+    "zh-Hans": "我已经通知了您的照顾者。（这只是演示，如果需要紧急帮助，请拨打995。）",
 }
 
 SOS_SEND_FAILED = {
