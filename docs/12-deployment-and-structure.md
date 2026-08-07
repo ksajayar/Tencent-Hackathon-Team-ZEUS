@@ -83,6 +83,7 @@ PUBLIC_BASE_URL=https://<app>.up.railway.app
 DEFAULT_TIMEZONE=Asia/Singapore
 LOG_LEVEL=INFO
 ENVIRONMENT=production
+DEMO_MODE=false
 ```
 
 `PUBLIC_BASE_URL` is load-bearing twice: Twilio signature validation and the media URLs Twilio
@@ -90,6 +91,34 @@ fetches. Get it wrong and every message 403s.
 
 Reference the Postgres variable with Railway's `${{Postgres.DATABASE_URL}}` syntax rather than
 pasting the value, so it survives a database re-provision.
+
+### 12.3a DEMO_MODE — the judge-facing demo path
+
+Set `DEMO_MODE=true` in Railway → Variables and redeploy (or restart the service) to turn it on;
+set it back to `false` (or remove it) and redeploy to restore the normal caregiver-onboarding
+flow untouched. It's the only flag this feature adds — every demo-only code path is gated on it.
+
+What it does, end to end:
+
+1. On startup with the flag on, the app seeds one reserved "template patient" (`app/services/demo.py`,
+   idempotent — safe across every redeploy) with a synthetic bilingual profile: medications, a
+   home address + safe zone, a bloodwork document (with blood type), an upcoming appointment, and
+   an emergency contact. A reserved "demo caregiver" account is created alongside it.
+2. Any WhatsApp number that has never messaged the bot before is auto-provisioned as a patient and
+   gets its own **clone** of the template's rows — not a shared copy, so multiple judges texting
+   at once each get an independent profile. No caregiver contact, no consent chain: the patient is
+   immediately fully populated and can ask "what medicine do I take", "what's my blood type",
+   "when's my next appointment", etc.
+3. Google is the one step that stays real. Right after provisioning, the patient is sent the same
+   OAuth consent link the normal `connect google` command sends — nothing about the Gmail/Calendar
+   connection is seeded or faked.
+4. An SOS trigger (the same `help`/`SOS`/`emergency`/救命 regex as always, SAFETY-2) never contacts
+   a real phone number in demo mode. It's rerouted to the reserved demo caregiver account only,
+   sent through the normal window-aware `outbound.send_text` (never the window-bypass
+   `send_urgent`), and logged to `sos_events` exactly as a real trigger would be.
+
+With `DEMO_MODE` unset or `false`, none of the above runs — every request takes the exact same
+path it did before this feature existed.
 
 ## 12.4 Deployment pipeline
 

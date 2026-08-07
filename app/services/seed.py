@@ -136,7 +136,13 @@ async def seed_demo_data(session: AsyncSession) -> dict:
     immediately so a forced sync/fire can be tested right away rather than
     waiting for the next scheduled reconciliation pass.
     """
-    patients_result = await session.execute(select(User).where(User.role == "patient"))
+    # is_active=False excludes the DEMO_MODE template patient
+    # (app/services/demo.py) - it's reserved seed data, never a real patient
+    # this legacy seed path should touch, even if DEMO_MODE was enabled at
+    # some point against this same database.
+    patients_result = await session.execute(
+        select(User).where(User.role == "patient", User.is_active.is_(True))
+    )
     patients = list(patients_result.scalars().all())
     if not patients:
         logger.warning("seed_no_patients_found")

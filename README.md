@@ -71,6 +71,24 @@ What is genuinely in scope for demo day is listed in `docs/13-roadmap.md` under
 
 ---
 
+## Demo Mode (judge-facing demo path)
+
+Set the `DEMO_MODE` environment variable to `true` (Railway → Variables, then redeploy) to let a
+judge WhatsApp the bot cold and be treated as a fully set-up patient — no caregiver, no consent
+chain. On startup the app seeds one reserved template profile (medications, appointments, blood
+type, home address, an emergency contact); any unknown number's first message auto-provisions a
+patient and clones that template into fresh rows just for them, so concurrent judges never share
+or collide on data. Google stays a real, live OAuth step — the patient is sent the actual consent
+link right after provisioning, nothing about that connection is faked. An SOS trigger in demo
+mode never reaches a real phone number: it's rerouted to a single reserved demo-caregiver account
+and logged exactly like a real alert.
+
+Set `DEMO_MODE` back to `false` (or remove it) and redeploy to restore the normal caregiver
+onboarding flow — every line of that flow is untouched, just unreachable while the flag is on.
+Full detail: `docs/12-deployment-and-structure.md` §12.3a.
+
+---
+
 ## Honest caveats
 
 - **Free-tier figures move.** Gemini's free quotas were cut in December 2025 and again in

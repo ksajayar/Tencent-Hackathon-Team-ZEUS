@@ -13,16 +13,20 @@ CONVERSATION_IDLE_DAYS = 7
 
 async def get_or_create_user(
     session: AsyncSession, *, wa_id: str, phone_e164: str, display_name: str | None
-) -> User:
+) -> tuple[User, bool]:
+    """Returns `(user, is_new)`. `is_new` is what app/api/webhooks.py uses to
+    decide whether to run the DEMO_MODE auto-provision/clone step - it must
+    only ever fire once, on the number's genuinely first message."""
     result = await session.execute(select(User).where(User.wa_id == wa_id))
     user = result.scalar_one_or_none()
+    is_new = user is None
     if user is None:
         user = User(wa_id=wa_id, phone_e164=phone_e164, display_name=display_name)
         session.add(user)
         await session.flush()
     elif display_name and user.display_name != display_name:
         user.display_name = display_name
-    return user
+    return user, is_new
 
 
 async def get_or_create_open_conversation(session: AsyncSession, user: User) -> Conversation:

@@ -7,8 +7,11 @@ from app.api.internal import router as internal_router
 from app.api.media import router as media_router
 from app.api.oauth import router as oauth_router
 from app.api.webhooks import router as webhooks_router
+from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
+from app.db.session import async_session
 from app.jobs import scheduler
+from app.services.demo import ensure_demo_template
 
 configure_logging()
 logger = get_logger(__name__)
@@ -17,6 +20,10 @@ logger = get_logger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("app_startup")
+    if settings.demo_mode:
+        async with async_session() as session:
+            await ensure_demo_template(session)
+            await session.commit()
     scheduler.start()
     yield
     scheduler.shutdown()

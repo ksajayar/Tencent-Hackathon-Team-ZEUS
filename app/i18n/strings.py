@@ -532,3 +532,18 @@ NO_HOME_ADDRESS_CAREGIVER = {
     "en": "There is no home address on file for {patient_name}.",
     "zh-Hans": "目前没有{patient_name}的家庭地址记录。",
 }
+
+# --- DEMO_MODE (see README) ---
+
+DEMO_WELCOME = {
+    "en": "Hello! I'm Kopi. This is a demo, so I've already set up {patient_name}'s profile "
+    "for you - medicines, an appointment, a blood type, and a home address are all ready. "
+    'Try asking me things like "what medicine do I take" or "what\'s my blood type".',
+    "zh-Hans": "您好！我是Kopi。这是一个演示，我已经为{patient_name}准备好了完整的资料——"
+    "药物、预约、血型和家庭地址都已就绪。您可以问我例如「我吃什么药」或「我的血型是什么」。",
+}
+
+DEMO_SOS_CAREGIVER_LABEL = {
+    "en": "your caregiver",
+    "zh-Hans": "您的照顾者",
+}

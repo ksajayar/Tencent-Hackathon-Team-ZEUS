@@ -11,6 +11,7 @@ from app.core.logging import get_logger
 from app.db.models.message import Message
 from app.pipelines.router import route_inbound
 from app.services import conversation as conversation_service
+from app.services import demo as demo_service
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -43,12 +44,21 @@ async def twilio_inbound(
     try:
         inbound = parse_inbound(form)
 
-        user = await conversation_service.get_or_create_user(
+        user, is_new_user = await conversation_service.get_or_create_user(
             session,
             wa_id=inbound.wa_id,
             phone_e164=inbound.phone_e164,
             display_name=inbound.display_name,
         )
+        # DEMO_MODE requirement 3: an unknown number gets auto-provisioned and
+        # the seed template cloned onto it, no caregiver step required. Pure
+        # DB writes here (no network/AI call), so this stays inside
+        # WEBHOOK-1's fast-ack budget; the welcome + Google-connect-link
+        # sends happen afterwards, in the background task (router.py).
+        is_demo_new_patient = settings.demo_mode and is_new_user and user.role == "patient"
+        if is_demo_new_patient:
+            await demo_service.clone_template_for_patient(session, user)
+
         conversation = await conversation_service.get_or_create_open_conversation(session, user)
         message = await conversation_service.record_inbound_message(
             session, user=user, conversation=conversation, inbound=inbound
@@ -71,6 +81,7 @@ async def twilio_inbound(
         conversation_id=conversation.id,
         message_id=message.id,
         inbound=inbound,
+        is_demo_new_patient=is_demo_new_patient,
     )
 
     return _empty_twiml()

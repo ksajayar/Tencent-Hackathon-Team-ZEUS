@@ -4,6 +4,7 @@ from app.channels import outbound
 from app.channels.base import InboundMessage
 from app.core.logging import get_logger
 from app.pipelines import contact as contact_pipeline
+from app.pipelines import demo as demo_pipeline
 from app.pipelines import document as document_pipeline
 from app.pipelines import image as image_pipeline
 from app.pipelines import location as location_pipeline
@@ -19,10 +20,21 @@ async def route_inbound(
     conversation_id: uuid.UUID,
     message_id: uuid.UUID,
     inbound: InboundMessage,
+    is_demo_new_patient: bool = False,
 ) -> None:
     # Fired once here (not per-pipeline) so every kind - text, voice, image,
     # etc. - shows "typing..." while the slow work (Gemini, STT, OCR) runs.
     await outbound.send_typing_indicator(inbound.message_sid)
+
+    if is_demo_new_patient:
+        # DEMO_MODE requirement 3+4: the profile was already cloned
+        # synchronously in the webhook handler (app/api/webhooks.py); this
+        # sends the welcome + real Google-connect link now that we're in the
+        # background task, then falls through to answer the actual inbound
+        # message normally below.
+        await demo_pipeline.send_provisioning_messages(
+            user_id=user_id, conversation_id=conversation_id
+        )
 
     if inbound.kind == "text" and inbound.text:
         await text_pipeline.handle(

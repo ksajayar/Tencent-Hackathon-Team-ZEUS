@@ -6,16 +6,20 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.channels import outbound
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.models.location import LocationPing
 from app.db.models.sos import SosEvent
 from app.db.models.user import User
 from app.i18n.strings import (
+    DEMO_SOS_CAREGIVER_LABEL,
     SOS_ALERT_TO_CONTACT,
     SOS_CONFIRMATION,
     SOS_NO_CONTACT,
     SOS_SEND_FAILED,
 )
+from app.services import conversation as conversation_service
+from app.services import demo as demo_service
 from app.services.contacts import get_emergency_contacts
 
 logger = get_logger(__name__)
@@ -122,8 +126,24 @@ async def trigger(
     """CLAUDE.md SAFETY-2: no LLM anywhere in this path. Regex match already
     happened in the caller; from here it's DB lookup -> alert -> fixed calm
     reply. Always returns a reply string - SOS never goes silent (§07 §7.9).
+
+    DEMO_MODE requirement 5: the real path below (patient's own emergency
+    contacts, delivered via the window-bypass outbound.send_urgent) is
+    completely skipped in demo mode - see _trigger_demo. No phone number
+    outside the demo caregiver account can ever receive an SOS while
+    settings.demo_mode is on.
     """
     location_ping = await _recent_location(session, user.id)
+
+    if settings.demo_mode:
+        return await _trigger_demo(
+            session,
+            user=user,
+            trigger_text=trigger_text,
+            reply_language=reply_language,
+            location_ping=location_ping,
+        )
+
     contacts = await get_emergency_contacts(session, user.id)
 
     if not contacts:
@@ -187,4 +207,66 @@ async def trigger(
 
     return _pick(SOS_CONFIRMATION, reply_language).format(
         name=_contact_display(contacts[0], reply_language)
+    )
+
+
+async def _trigger_demo(
+    session: AsyncSession,
+    *,
+    user: User,
+    trigger_text: str,
+    reply_language: str,
+    location_ping: LocationPing | None,
+) -> str:
+    """DEMO_MODE requirement 5: never contacts a real emergency-contact phone
+    number and never uses the SOS window-bypass send (outbound.send_urgent)
+    - routes only to the shared demo caregiver account
+    (app/services/demo.py::DEMO_CAREGIVER_WA_ID) via the normal window-aware
+    outbound.send_text, and logs to sos_events with the same shape a real SOS
+    uses. The patient's own (cloned, synthetic) emergency contacts are never
+    looked up here, so no phone number outside the demo caregiver's own can
+    ever receive a simulated SOS.
+    """
+    demo_caregiver = await demo_service.get_demo_caregiver(session)
+
+    if demo_caregiver is None:
+        # ensure_demo_template() didn't run, or DEMO_MODE was flipped on
+        # without a restart - fail safe by still logging the event rather
+        # than crashing the SOS reply.
+        logger.error("demo_sos_caregiver_missing", user_id=str(user.id))
+        notified_entries = [{"contact_id": "demo-caregiver", "outcome": "no_phone"}]
+    else:
+        patient_name = user.display_name or (
+            "患者" if reply_language == "zh-Hans" else "the patient"
+        )
+        alert_body = _pick(SOS_ALERT_TO_CONTACT, reply_language).format(
+            patient_name=patient_name,
+            location=_location_sentence(location_ping, reply_language),
+        )
+        caregiver_conversation = await conversation_service.get_or_create_open_conversation(
+            session, demo_caregiver
+        )
+        sent_message = await outbound.send_text(
+            session, demo_caregiver, caregiver_conversation.id, alert_body
+        )
+        # send_text returns None when the demo caregiver's own 24h window is
+        # closed - it's queued (outbound_queue), not lost, same as any other
+        # recipient. Never "failed": send_text doesn't surface delivery
+        # failures the way send_urgent's try/except does.
+        outcome = "sent" if sent_message is not None else "queued_awaiting_window"
+        notified_entries = [{"contact_id": "demo-caregiver", "outcome": outcome}]
+
+    session.add(
+        SosEvent(
+            user_id=user.id,
+            trigger_text=trigger_text[:500],
+            location_ping_id=location_ping.id if location_ping else None,
+            notified=notified_entries,
+        )
+    )
+    await session.flush()
+    logger.warning("sos_triggered_demo", user_id=str(user.id))
+
+    return _pick(SOS_CONFIRMATION, reply_language).format(
+        name=_pick(DEMO_SOS_CAREGIVER_LABEL, reply_language)
     )

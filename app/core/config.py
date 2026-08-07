@@ -61,6 +61,12 @@ class Settings(BaseSettings):
     default_timezone: str = "Asia/Singapore"
     log_level: str = "INFO"
     environment: str = "development"
+    # Judge-facing demo path (see README "DEMO_MODE"): skips the caregiver
+    # onboarding/consent chain entirely and auto-provisions a fully-populated
+    # patient on first contact from an unknown number. Every demo-only branch
+    # in the codebase is gated on this one flag; everything else is
+    # unchanged when it's False (the default).
+    demo_mode: bool = False
 
     @property
     def sync_database_url(self) -> str:
